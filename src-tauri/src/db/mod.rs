@@ -1,5 +1,5 @@
 use rusqlite::Connection;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct Database {
@@ -9,10 +9,6 @@ pub struct Database {
 impl Database {
     pub fn new(path: PathBuf) -> Self {
         Self { path }
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 
     pub fn connect(&self) -> anyhow::Result<Connection> {

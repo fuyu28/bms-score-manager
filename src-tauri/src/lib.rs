@@ -8,7 +8,7 @@ mod tables;
 use chrono::Utc;
 use db::Database;
 use logging::JsonlLogger;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::PathBuf;

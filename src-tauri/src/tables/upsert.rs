@@ -50,7 +50,7 @@ pub async fn import_table(
     let fetched = match fetch_table_payload(&client, &input_url).await {
         Ok(v) => v,
         Err(e) => {
-            let mut conn = db.connect()?;
+            let conn = db.connect()?;
             conn.execute(
                 "UPDATE table_sources SET last_error=?2 WHERE id=?1",
                 params![source_id, format!("{}", e)],
