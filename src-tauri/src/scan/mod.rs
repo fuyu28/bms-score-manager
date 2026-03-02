@@ -83,7 +83,7 @@ pub fn run_scan(
     let root = PathBuf::from(root_path);
     let (packages, charts) = collect_packages(&root)?;
 
-    let mut tx = conn.transaction()?;
+    let tx = conn.transaction()?;
     tx.execute("DELETE FROM packages WHERE root_id=?1", params![root_id])?;
 
     let mut inserted_charts = 0usize;
@@ -181,7 +181,7 @@ pub fn run_scan(
             })
             .collect();
 
-        let mut tx = conn.transaction()?;
+        let tx = conn.transaction()?;
         let mut update_stmt = tx.prepare_cached(
             "UPDATE charts
              SET title=?2, subtitle=?3, artist=?4, subartist=?5, genre=?6, playlevel=?7,
