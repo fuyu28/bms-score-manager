@@ -36,3 +36,4 @@ scraper = "0.23"
 url = "2"
 trash = "5"
 uuid = { version = "1", features = ["v4", "serde"] }
+rayon = "1.10"

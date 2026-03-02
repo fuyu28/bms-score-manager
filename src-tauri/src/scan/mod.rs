@@ -2,9 +2,11 @@ use crate::bms_parse;
 use crate::db::Database;
 use crate::logging::JsonlLogger;
 use chrono::Utc;
-use rusqlite::{params, OptionalExtension};
+use rayon::prelude::*;
+use rusqlite::{params, OptionalExtension, Statement};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -40,6 +42,26 @@ struct PackageRow {
     chart_count: i64,
 }
 
+#[derive(Debug)]
+struct ParsedChartRow {
+    chart_id: i64,
+    title: Option<String>,
+    subtitle: Option<String>,
+    artist: Option<String>,
+    subartist: Option<String>,
+    genre: Option<String>,
+    playlevel: Option<String>,
+    bpm: Option<String>,
+    total: Option<String>,
+    player: Option<String>,
+    wav_count: i64,
+    bmp_count: i64,
+    wav_list_json: String,
+    bmp_list_json: String,
+    file_md5: String,
+    bms_norm_hash: Option<String>,
+}
+
 pub fn run_scan(
     db: Database,
     logger: Arc<JsonlLogger>,
@@ -65,27 +87,36 @@ pub fn run_scan(
     tx.execute("DELETE FROM packages WHERE root_id=?1", params![root_id])?;
 
     let mut inserted_charts = 0usize;
+    let mut charts_by_package: HashMap<&str, Vec<&ChartFile>> = HashMap::new();
+    for chart in &charts {
+        charts_by_package
+            .entry(chart.package_rel.as_str())
+            .or_default()
+            .push(chart);
+    }
+
+    let mut pkg_stmt = tx.prepare(
+        "INSERT INTO packages(root_id, path, mtime, total_size, file_count, chart_count, last_scanned_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    )?;
+    let mut chart_stmt = tx.prepare(
+        "INSERT INTO charts(package_id, rel_path, ext, file_size, mtime) VALUES(?1, ?2, ?3, ?4, ?5)",
+    )?;
+
     for pkg in &packages {
-        tx.execute(
-            "INSERT INTO packages(root_id, path, mtime, total_size, file_count, chart_count, last_scanned_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                root_id,
-                pkg.rel_path,
-                pkg.mtime,
-                pkg.total_size,
-                pkg.file_count,
-                pkg.chart_count,
-                Utc::now().to_rfc3339(),
-            ],
-        )?;
+        pkg_stmt.execute(params![
+            root_id,
+            pkg.rel_path,
+            pkg.mtime,
+            pkg.total_size,
+            pkg.file_count,
+            pkg.chart_count,
+            Utc::now().to_rfc3339(),
+        ])?;
         let package_id = tx.last_insert_rowid();
-        for chart in charts.iter().filter(|c| c.package_rel == pkg.rel_path) {
-            tx.execute(
-                "INSERT INTO charts(package_id, rel_path, ext, file_size, mtime) VALUES(?1, ?2, ?3, ?4, ?5)",
-                params![package_id, chart.rel_path, chart.ext, chart.file_size, chart.mtime],
-            )?;
-            inserted_charts += 1;
+        if let Some(pkg_charts) = charts_by_package.get(pkg.rel_path.as_str()) {
+            bulk_insert_charts(&mut chart_stmt, package_id, pkg_charts.iter().copied())?;
+            inserted_charts += pkg_charts.len();
         }
     }
     tx.commit()?;
@@ -116,42 +147,67 @@ pub fn run_scan(
             })?;
             rows.collect::<Result<Vec<_>, _>>()?
         };
+        let parse_start = Instant::now();
+        let parsed_rows: Vec<ParsedChartRow> = charts_to_parse
+            .into_par_iter()
+            .filter_map(|(chart_id, pkg_path, rel_path)| {
+                let file_path = root.join(pkg_path).join(rel_path);
+                if !file_path.exists() {
+                    return None;
+                }
+                let parsed_bms = bms_parse::parse_chart(&file_path).ok()?;
+                let wav_list_json = serde_json::to_string(&parsed_bms.wav_list).ok()?;
+                let bmp_list_json = serde_json::to_string(&parsed_bms.bmp_list).ok()?;
+                Some(ParsedChartRow {
+                    chart_id,
+                    title: parsed_bms.title,
+                    subtitle: parsed_bms.subtitle,
+                    artist: parsed_bms.artist,
+                    subartist: parsed_bms.subartist,
+                    genre: parsed_bms.genre,
+                    playlevel: parsed_bms.playlevel,
+                    bpm: parsed_bms.bpm,
+                    total: parsed_bms.total,
+                    player: parsed_bms.player,
+                    wav_count: parsed_bms.wav_list.len() as i64,
+                    bmp_count: parsed_bms.bmp_list.len() as i64,
+                    wav_list_json,
+                    bmp_list_json,
+                    file_md5: parsed_bms.file_md5,
+                    bms_norm_hash: parsed_bms.bms_norm_hash,
+                })
+            })
+            .collect();
 
         let tx = conn.transaction()?;
-        for (chart_id, pkg_path, rel_path) in charts_to_parse {
-            let file_path = root.join(pkg_path).join(rel_path);
-            if !file_path.exists() {
-                continue;
-            }
-            if let Ok(parsed_bms) = bms_parse::parse_chart(&file_path) {
-                tx.execute(
-                    "UPDATE charts
-                     SET title=?2, subtitle=?3, artist=?4, subartist=?5, genre=?6, playlevel=?7,
-                         bpm=?8, total=?9, player=?10,
-                         wav_count=?11, bmp_count=?12, wav_list_json=?13, bmp_list_json=?14,
-                         file_md5=?15, bms_norm_hash=?16
-                     WHERE id=?1",
-                    params![
-                        chart_id,
-                        parsed_bms.title,
-                        parsed_bms.subtitle,
-                        parsed_bms.artist,
-                        parsed_bms.subartist,
-                        parsed_bms.genre,
-                        parsed_bms.playlevel,
-                        parsed_bms.bpm,
-                        parsed_bms.total,
-                        parsed_bms.player,
-                        parsed_bms.wav_list.len() as i64,
-                        parsed_bms.bmp_list.len() as i64,
-                        serde_json::to_string(&parsed_bms.wav_list)?,
-                        serde_json::to_string(&parsed_bms.bmp_list)?,
-                        parsed_bms.file_md5,
-                        parsed_bms.bms_norm_hash,
-                    ],
-                )?;
-                parsed += 1;
-            }
+        let mut update_stmt = tx.prepare(
+            "UPDATE charts
+             SET title=?2, subtitle=?3, artist=?4, subartist=?5, genre=?6, playlevel=?7,
+                 bpm=?8, total=?9, player=?10,
+                 wav_count=?11, bmp_count=?12, wav_list_json=?13, bmp_list_json=?14,
+                 file_md5=?15, bms_norm_hash=?16
+             WHERE id=?1",
+        )?;
+        for row in parsed_rows {
+            update_stmt.execute(params![
+                row.chart_id,
+                row.title,
+                row.subtitle,
+                row.artist,
+                row.subartist,
+                row.genre,
+                row.playlevel,
+                row.bpm,
+                row.total,
+                row.player,
+                row.wav_count,
+                row.bmp_count,
+                row.wav_list_json,
+                row.bmp_list_json,
+                row.file_md5,
+                row.bms_norm_hash,
+            ])?;
+            parsed += 1;
         }
         tx.commit()?;
         logger.log("db_commit", {
@@ -159,6 +215,10 @@ pub fn run_scan(
             m.insert("event_scope".into(), json!("scan_parse"));
             m.insert("root_id".into(), json!(root_id));
             m.insert("parsed_count".into(), json!(parsed));
+            m.insert(
+                "parse_duration_ms".into(),
+                json!(parse_start.elapsed().as_millis()),
+            );
             m
         });
     }
@@ -293,4 +353,24 @@ fn map_with_int(key: &str, v: i64) -> Map<String, Value> {
     let mut m = Map::new();
     m.insert(key.to_string(), json!(v));
     m
+}
+
+fn bulk_insert_charts<'a, I>(
+    stmt: &mut Statement<'_>,
+    package_id: i64,
+    charts: I,
+) -> anyhow::Result<()>
+where
+    I: IntoIterator<Item = &'a ChartFile>,
+{
+    for chart in charts {
+        stmt.execute(params![
+            package_id,
+            chart.rel_path,
+            chart.ext,
+            chart.file_size,
+            chart.mtime
+        ])?;
+    }
+    Ok(())
 }
