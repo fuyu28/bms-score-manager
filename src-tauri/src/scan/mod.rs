@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
 
 const CHART_EXTS: [&str; 4] = ["bms", "bme", "bml", "pms"];
@@ -73,7 +73,7 @@ pub fn run_scan(
     let start = Instant::now();
     logger.log("scan_start", map_with_int("root_id", root_id));
     if let Some(app) = &app_handle {
-        let _ = app.emit_all("scan_progress", json!({"phase":"start","root_id":root_id}));
+        let _ = app.emit("scan_progress", json!({"phase":"start","root_id":root_id}));
     }
 
     let mut conn = db.connect()?;
@@ -137,7 +137,7 @@ pub fn run_scan(
         m
     });
     if let Some(app) = &app_handle {
-        let _ = app.emit_all(
+        let _ = app.emit(
             "scan_progress",
             json!({"phase":"structure_done","root_id":root_id,"packages":packages.len(),"charts":charts.len()}),
         );
@@ -177,7 +177,7 @@ pub fn run_scan(
                 let current = counter.fetch_add(1, Ordering::Relaxed) + 1;
                 if current % 50 == 0 {
                     if let Some(app) = &app_handle {
-                        let _ = app.emit_all(
+                        let _ = app.emit(
                             "scan_progress",
                             json!({"phase":"parsing","root_id":root_id,"done":current,"total":total}),
                         );
@@ -248,7 +248,7 @@ pub fn run_scan(
             m
         });
         if let Some(app) = &app_handle {
-            let _ = app.emit_all(
+            let _ = app.emit(
                 "scan_progress",
                 json!({"phase":"parse_done","root_id":root_id,"parsed":parsed,"total":total}),
             );
