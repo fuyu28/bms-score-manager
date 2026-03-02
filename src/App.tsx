@@ -68,6 +68,8 @@ type DedupePreview = {
   remove_count: number;
   cross_root: boolean;
   targets: string[];
+  operations: Array<{ source_path: string; backup_path: string; backup_conflict: boolean }>;
+  confirmation_phrase: string;
 };
 
 const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString("ja-JP") : "-");
@@ -181,7 +183,12 @@ export default function App() {
   const executeDedupe = () =>
     wrap("dedupe-exec", async () => {
       await invoke("execute_dedupe", {
-        req: { keep_chart_id: Number(keepChartId), remove_chart_ids: removeIds, allow_cross_root: false }
+        req: {
+          keep_chart_id: Number(keepChartId),
+          remove_chart_ids: removeIds,
+          allow_cross_root: false,
+          confirmation_text: preview?.confirmation_phrase
+        }
       });
       setPreview(null);
       await detectDedupe();
@@ -351,6 +358,16 @@ export default function App() {
               <div className="rounded-lg border border-border bg-background/70 p-3 text-sm">
                 <div>削除対象: {preview.remove_count}件</div>
                 <div>root跨ぎ: {preview.cross_root ? "あり（実行不可）" : "なし"}</div>
+                <div className="mt-2 font-mono text-xs text-muted-foreground">
+                  確認フレーズ: {preview.confirmation_phrase}
+                </div>
+                <div className="mt-2 max-h-24 space-y-1 overflow-auto text-xs text-muted-foreground">
+                  {preview.operations.slice(0, 5).map((op) => (
+                    <div key={op.source_path} className="truncate">
+                      backup: {op.backup_path}
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : null}
           </CardContent>

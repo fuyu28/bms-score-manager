@@ -89,6 +89,14 @@ pub fn run_scan(
         }
     }
     tx.commit()?;
+    logger.log("db_commit", {
+        let mut m = Map::new();
+        m.insert("event_scope".into(), json!("scan_structure"));
+        m.insert("root_id".into(), json!(root_id));
+        m.insert("package_count".into(), json!(packages.len()));
+        m.insert("chart_count".into(), json!(inserted_charts));
+        m
+    });
 
     let mut parsed = 0usize;
     {
@@ -146,6 +154,13 @@ pub fn run_scan(
             }
         }
         tx.commit()?;
+        logger.log("db_commit", {
+            let mut m = Map::new();
+            m.insert("event_scope".into(), json!("scan_parse"));
+            m.insert("root_id".into(), json!(root_id));
+            m.insert("parsed_count".into(), json!(parsed));
+            m
+        });
     }
     {
         let conn = db.connect()?;

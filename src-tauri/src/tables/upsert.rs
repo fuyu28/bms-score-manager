@@ -58,6 +58,13 @@ pub async fn import_table(
             return Err(e);
         }
     };
+    logger.log("table_fetch", {
+        let mut m = Map::new();
+        m.insert("source_id".into(), json!(source_id));
+        m.insert("url".into(), json!(input_url));
+        m.insert("final_url".into(), json!(fetched.data_final_url));
+        m
+    });
 
     let pattern = classify(
         &fetched.header_json,
@@ -84,6 +91,13 @@ pub async fn import_table(
                 params![source_id, Utc::now().to_rfc3339()],
             )?;
             tx.commit()?;
+            logger.log("db_commit", {
+                let mut m = Map::new();
+                m.insert("event_scope".into(), json!("table_skip_hash"));
+                m.insert("source_id".into(), json!(source_id));
+                m.insert("table_id".into(), json!(table_id));
+                m
+            });
             logger.log("table_fetch_skipped", {
                 let mut m = Map::new();
                 m.insert("source_id".into(), json!(source_id));
@@ -203,6 +217,15 @@ pub async fn import_table(
     )?;
 
     tx.commit()?;
+    logger.log("db_commit", {
+        let mut m = Map::new();
+        m.insert("event_scope".into(), json!("table_upsert"));
+        m.insert("source_id".into(), json!(source_id));
+        m.insert("table_id".into(), json!(table_id));
+        m.insert("entry_count".into(), json!(parsed.entries.len()));
+        m.insert("group_count".into(), json!(parsed.groups.len()));
+        m
+    });
 
     logger.log("table_parse_done", {
         let mut m = Map::new();

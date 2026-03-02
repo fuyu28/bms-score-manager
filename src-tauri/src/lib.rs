@@ -299,10 +299,21 @@ async fn preview_dedupe(
     req: dedupe::DedupePreviewRequest,
 ) -> Result<dedupe::DedupePreview, String> {
     let db = state.db.clone();
-    tauri::async_runtime::spawn_blocking(move || dedupe::preview_merge(db, req))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+    let logger = state.logger.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let preview = dedupe::preview_merge(db, req)?;
+        logger.log("dedupe_preview", {
+            let mut m = serde_json::Map::new();
+            m.insert("keep_chart_id".into(), json!(preview.keep_chart_id));
+            m.insert("remove_count".into(), json!(preview.remove_count));
+            m.insert("cross_root".into(), json!(preview.cross_root));
+            m
+        });
+        Ok::<_, anyhow::Error>(preview)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
