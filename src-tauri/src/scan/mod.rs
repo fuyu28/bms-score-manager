@@ -83,7 +83,7 @@ pub fn run_scan(
     let root = PathBuf::from(root_path);
     let (packages, charts) = collect_packages(&root)?;
 
-    let tx = conn.transaction()?;
+    let mut tx = conn.transaction()?;
     tx.execute("DELETE FROM packages WHERE root_id=?1", params![root_id])?;
 
     let mut inserted_charts = 0usize;
@@ -95,11 +95,11 @@ pub fn run_scan(
             .push(chart);
     }
 
-    let mut pkg_stmt = tx.prepare(
+    let mut pkg_stmt = tx.prepare_cached(
         "INSERT INTO packages(root_id, path, mtime, total_size, file_count, chart_count, last_scanned_at)
          VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )?;
-    let mut chart_stmt = tx.prepare(
+    let mut chart_stmt = tx.prepare_cached(
         "INSERT INTO charts(package_id, rel_path, ext, file_size, mtime) VALUES(?1, ?2, ?3, ?4, ?5)",
     )?;
 
@@ -119,6 +119,8 @@ pub fn run_scan(
             inserted_charts += pkg_charts.len();
         }
     }
+    drop(chart_stmt);
+    drop(pkg_stmt);
     tx.commit()?;
     logger.log("db_commit", {
         let mut m = Map::new();
