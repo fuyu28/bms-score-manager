@@ -92,6 +92,7 @@ export default function App() {
   const [keepChartId, setKeepChartId] = useState("");
   const [removeChartIds, setRemoveChartIds] = useState("");
   const [preview, setPreview] = useState<DedupePreview | null>(null);
+  const [scanStatus, setScanStatus] = useState<string>("");
 
   const removeIds = useMemo(
     () =>
@@ -152,8 +153,12 @@ export default function App() {
 
   const scanRoot = (rootId: number) =>
     wrap(`scan-${rootId}`, async () => {
+      setScanStatus(`root #${rootId} をスキャン中...`);
       const result = await invoke<ScanResult>("scan_root", { rootId });
       setScanLog(result);
+      setScanStatus(
+        `root #${rootId} 完了: package ${result.package_count}, chart ${result.chart_count}, parsed ${result.parsed_count}`,
+      );
       await searchCharts(query);
       await loadDuplicates();
     });
@@ -514,14 +519,7 @@ export default function App() {
           </div>
         ) : null}
       </section>
-      {loading ? (
-        <div className="fixed bottom-3 left-1/2 z-30 -translate-x-1/2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/40">
-          <div className="flex items-center gap-3 px-4 py-2 text-sm font-medium">
-            <div className="h-2 w-2 animate-pulse rounded-full bg-primary-foreground" />
-            <span>処理中... ({loading})</span>
-          </div>
-        </div>
-      ) : null}
+      <StatusBar loading={loading} scanStatus={scanStatus} />
     </main>
   );
 }
@@ -548,5 +546,37 @@ function NavButton({
     >
       {children}
     </button>
+  );
+}
+
+function StatusBar({ loading, scanStatus }: { loading: string | null; scanStatus: string }) {
+  if (!loading) return null;
+  const label =
+    loading === "roots"
+      ? "ルート取得中"
+      : loading.startsWith("scan-")
+        ? "スキャン中"
+        : loading.startsWith("import-")
+          ? "表取り込み中"
+          : loading === "import-all"
+            ? "表一括取り込み中"
+            : loading === "dedupe-preview"
+              ? "重複プレビュー"
+              : loading === "dedupe-exec"
+                ? "重複削除実行中"
+                : "処理中";
+  return (
+    <div className="fixed bottom-3 left-1/2 z-30 -translate-x-1/2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/40">
+      <div className="flex items-center gap-3 px-4 py-2 text-sm font-medium">
+        <div className="h-2 w-2 animate-pulse rounded-full bg-primary-foreground" />
+        <div className="flex flex-col">
+          <span>
+            {label}
+            {loading && loading !== label ? ` (${loading})` : ""}
+          </span>
+          {scanStatus ? <span className="text-[11px] opacity-80">{scanStatus}</span> : null}
+        </div>
+      </div>
+    </div>
   );
 }
