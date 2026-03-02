@@ -1,0 +1,44 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 38% 96%;
+    --foreground: 200 22% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 200 22% 12%;
+    --primary: 196 78% 32%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 33 70% 86%;
+    --secondary-foreground: 196 45% 20%;
+    --muted: 40 28% 90%;
+    --muted-foreground: 200 14% 40%;
+    --accent: 165 62% 82%;
+    --accent-foreground: 191 56% 18%;
+    --destructive: 0 78% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 34 30% 80%;
+    --input: 34 30% 80%;
+    --ring: 196 78% 32%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply min-h-screen bg-background font-sans text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at 8% 10%, hsl(165 62% 82% / 0.25), transparent 32%),
+      radial-gradient(circle at 86% 20%, hsl(196 78% 42% / 0.18), transparent 36%),
+      linear-gradient(160deg, hsl(40 38% 96%), hsl(38 32% 92%));
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+}
