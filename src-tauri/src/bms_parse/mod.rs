@@ -62,10 +62,8 @@ pub fn parse_chart(path: &Path) -> anyhow::Result<ParsedBms> {
                         if !value.is_empty() {
                             wav.insert(value);
                         }
-                    } else if key.starts_with("BMP") {
-                        if !value.is_empty() {
-                            bmp.insert(value);
-                        }
+                    } else if key.starts_with("BMP") && !value.is_empty() {
+                        bmp.insert(value);
                     }
                 }
             }

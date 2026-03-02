@@ -60,7 +60,13 @@ type ChartRow = {
 type DuplicateGroup = {
   key: string;
   kind: string;
-  charts: Array<{ chart_id: number; full_path: string; root_id: number; title?: string | null; artist?: string | null }>;
+  charts: Array<{
+    chart_id: number;
+    full_path: string;
+    root_id: number;
+    title?: string | null;
+    artist?: string | null;
+  }>;
 };
 
 type DedupePreview = {
@@ -96,8 +102,12 @@ export default function App() {
   const [message, setMessage] = useState<string>("");
 
   const removeIds = useMemo(
-    () => removeChartIds.split(/[\s,]+/).map((v) => Number(v)).filter((v) => Number.isFinite(v) && v > 0),
-    [removeChartIds]
+    () =>
+      removeChartIds
+        .split(/[\s,]+/)
+        .map((v) => Number(v))
+        .filter((v) => Number.isFinite(v) && v > 0),
+    [removeChartIds],
   );
 
   const wrap = async (key: string, fn: () => Promise<void>) => {
@@ -153,7 +163,9 @@ export default function App() {
     wrap(`import-${sourceId}`, async () => {
       const result = await invoke<ImportResult>("import_table_source", { sourceId });
       setLastImport(result);
-      const summary = await invoke<OwnershipSummary>("ownership_summary", { tableId: result.table_id });
+      const summary = await invoke<OwnershipSummary>("ownership_summary", {
+        tableId: result.table_id,
+      });
       setOwnership(summary);
       await loadSources();
     });
@@ -161,7 +173,7 @@ export default function App() {
   const doSearch = () =>
     wrap("search", async () => {
       const rows = await invoke<ChartRow[]>("search_charts", {
-        params: { query, limit: 50, offset: 0 }
+        params: { query, limit: 50, offset: 0 },
       });
       setCharts(rows);
     });
@@ -175,7 +187,7 @@ export default function App() {
   const previewDedupe = () =>
     wrap("dedupe-preview", async () => {
       const result = await invoke<DedupePreview>("preview_dedupe", {
-        req: { keep_chart_id: Number(keepChartId), remove_chart_ids: removeIds }
+        req: { keep_chart_id: Number(keepChartId), remove_chart_ids: removeIds },
       });
       setPreview(result);
     });
@@ -187,8 +199,8 @@ export default function App() {
           keep_chart_id: Number(keepChartId),
           remove_chart_ids: removeIds,
           allow_cross_root: false,
-          confirmation_text: preview?.confirmation_phrase
-        }
+          confirmation_text: preview?.confirmation_phrase,
+        },
       });
       setPreview(null);
       await detectDedupe();
@@ -202,7 +214,10 @@ export default function App() {
           <h1 className="font-['Space_Grotesk'] text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             BMS Score Manager
           </h1>
-          <Button variant="secondary" onClick={() => void Promise.all([loadRoots(), loadSources()])}>
+          <Button
+            variant="secondary"
+            onClick={() => void Promise.all([loadRoots(), loadSources()])}
+          >
             <RefreshCcw className="mr-2 h-4 w-4" />
             再読込
           </Button>
@@ -221,17 +236,26 @@ export default function App() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
-              <Input value={rootPath} onChange={(e) => setRootPath(e.currentTarget.value)} placeholder="例: D:/BMS" />
+              <Input
+                value={rootPath}
+                onChange={(e) => setRootPath(e.currentTarget.value)}
+                placeholder="例: D:/BMS"
+              />
               <Button onClick={() => void addRoot()} disabled={!rootPath || !!loading}>
                 追加
               </Button>
             </div>
             <div className="space-y-2">
               {roots.map((root) => (
-                <div key={root.id} className="rounded-lg border border-border/70 bg-background/60 p-3">
+                <div
+                  key={root.id}
+                  className="rounded-lg border border-border/70 bg-background/60 p-3"
+                >
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="text-sm font-medium">{root.path}</div>
-                    <Badge variant={root.enabled ? "default" : "outline"}>{root.enabled ? "有効" : "無効"}</Badge>
+                    <Badge variant={root.enabled ? "default" : "outline"}>
+                      {root.enabled ? "有効" : "無効"}
+                    </Badge>
                   </div>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>登録: {fmt(root.created_at)}</span>
@@ -244,7 +268,8 @@ export default function App() {
             </div>
             {scanLog ? (
               <div className="rounded-lg bg-secondary/50 p-3 text-sm">
-                root#{scanLog.root_id} / package {scanLog.package_count} / chart {scanLog.chart_count} / parsed {scanLog.parsed_count}
+                root#{scanLog.root_id} / package {scanLog.package_count} / chart{" "}
+                {scanLog.chart_count} / parsed {scanLog.parsed_count}
               </div>
             ) : null}
           </CardContent>
@@ -253,23 +278,34 @@ export default function App() {
         <Card>
           <CardHeader>
             <CardTitle>2. 難易度表取り込み</CardTitle>
-            <CardDescription>bmstableページURLを登録し取り込みます（Pattern A-D対応）。</CardDescription>
+            <CardDescription>
+              bmstableページURLを登録し取り込みます（Pattern A-D対応）。
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
-              <Input value={tableUrl} onChange={(e) => setTableUrl(e.currentTarget.value)} placeholder="https://example.com/table.html" />
+              <Input
+                value={tableUrl}
+                onChange={(e) => setTableUrl(e.currentTarget.value)}
+                placeholder="https://example.com/table.html"
+              />
               <Button onClick={() => void addTableSource()} disabled={!tableUrl || !!loading}>
                 登録
               </Button>
             </div>
             <div className="space-y-2">
               {sources.map((src) => (
-                <div key={src.id} className="rounded-lg border border-border/70 bg-background/60 p-3">
+                <div
+                  key={src.id}
+                  className="rounded-lg border border-border/70 bg-background/60 p-3"
+                >
                   <div className="mb-2 truncate text-sm font-medium">{src.input_url}</div>
                   <div className="mb-2 text-xs text-muted-foreground">
                     成功: {fmt(src.last_success_at)} / 取得: {fmt(src.last_fetch_at)}
                   </div>
-                  {src.last_error ? <div className="mb-2 text-xs text-destructive">{src.last_error}</div> : null}
+                  {src.last_error ? (
+                    <div className="mb-2 text-xs text-destructive">{src.last_error}</div>
+                  ) : null}
                   <Button size="sm" onClick={() => void importSource(src.id)} disabled={!!loading}>
                     取り込み
                   </Button>
@@ -278,12 +314,14 @@ export default function App() {
             </div>
             {lastImport ? (
               <div className="rounded-lg bg-accent/50 p-3 text-sm text-accent-foreground">
-                table#{lastImport.table_id} / pattern {lastImport.pattern} / entries {lastImport.entry_count} / groups {lastImport.group_count}
+                table#{lastImport.table_id} / pattern {lastImport.pattern} / entries{" "}
+                {lastImport.entry_count} / groups {lastImport.group_count}
               </div>
             ) : null}
             {ownership ? (
               <div className="rounded-lg bg-secondary/50 p-3 text-sm">
-                所持 {ownership.owned_entries} / 未所持 {ownership.missing_entries} / 合計 {ownership.total_entries}
+                所持 {ownership.owned_entries} / 未所持 {ownership.missing_entries} / 合計{" "}
+                {ownership.total_entries}
               </div>
             ) : null}
           </CardContent>
@@ -292,20 +330,32 @@ export default function App() {
         <Card>
           <CardHeader>
             <CardTitle>3. 譜面検索</CardTitle>
-            <CardDescription>SQLite FTS5でタイトル・アーティスト・パスを検索します。</CardDescription>
+            <CardDescription>
+              SQLite FTS5でタイトル・アーティスト・パスを検索します。
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
-              <Input value={query} onChange={(e) => setQuery(e.currentTarget.value)} placeholder="タイトル / アーティスト / パス" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.currentTarget.value)}
+                placeholder="タイトル / アーティスト / パス"
+              />
               <Button onClick={() => void doSearch()} disabled={!!loading}>
-                <Search className="mr-2 h-4 w-4" />検索
+                <Search className="mr-2 h-4 w-4" />
+                検索
               </Button>
             </div>
             <div className="max-h-72 space-y-2 overflow-auto pr-1">
               {charts.map((chart) => (
-                <div key={chart.chart_id} className="rounded-lg border border-border/70 bg-background/70 p-3 text-sm">
+                <div
+                  key={chart.chart_id}
+                  className="rounded-lg border border-border/70 bg-background/70 p-3 text-sm"
+                >
                   <div className="font-medium">{chart.title || chart.rel_path}</div>
-                  <div className="text-xs text-muted-foreground">{chart.artist || "(artistなし)"}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {chart.artist || "(artistなし)"}
+                  </div>
                   <div className="truncate text-xs text-muted-foreground">
                     {chart.root_path}/{chart.package_path}/{chart.rel_path}
                   </div>
@@ -326,7 +376,10 @@ export default function App() {
             </Button>
             <div className="max-h-48 space-y-2 overflow-auto pr-1">
               {duplicates.slice(0, 10).map((g) => (
-                <div key={g.key} className="rounded-lg border border-border/70 bg-background/60 p-3 text-xs">
+                <div
+                  key={g.key}
+                  className="rounded-lg border border-border/70 bg-background/60 p-3 text-xs"
+                >
                   <div className="mb-1 font-semibold">{g.key}</div>
                   {g.charts.map((c) => (
                     <div key={c.chart_id} className="truncate text-muted-foreground">
@@ -336,14 +389,22 @@ export default function App() {
                 </div>
               ))}
             </div>
-            <Input value={keepChartId} onChange={(e) => setKeepChartId(e.currentTarget.value)} placeholder="保持する chart_id" />
+            <Input
+              value={keepChartId}
+              onChange={(e) => setKeepChartId(e.currentTarget.value)}
+              placeholder="保持する chart_id"
+            />
             <Textarea
               value={removeChartIds}
               onChange={(e) => setRemoveChartIds(e.currentTarget.value)}
               placeholder="削除する chart_id（カンマ区切りまたは改行）"
             />
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => void previewDedupe()} disabled={!keepChartId || removeIds.length === 0 || !!loading}>
+              <Button
+                variant="outline"
+                onClick={() => void previewDedupe()}
+                disabled={!keepChartId || removeIds.length === 0 || !!loading}
+              >
                 プレビュー
               </Button>
               <Button
@@ -351,7 +412,8 @@ export default function App() {
                 onClick={() => void executeDedupe()}
                 disabled={!preview || preview.cross_root || !!loading}
               >
-                <Trash2 className="mr-2 h-4 w-4" />実行
+                <Trash2 className="mr-2 h-4 w-4" />
+                実行
               </Button>
             </div>
             {preview ? (
