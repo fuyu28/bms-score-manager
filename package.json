@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:frontend": "tsc && vite build",
+    "build:backend": "cargo build --manifest-path src-tauri/Cargo.toml",
+    "build:all": "bun run build:frontend && bun run build:backend",
+    "build:tauri": "bun run tauri build",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint:ts": "bunx oxlint . --react-plugin --deny-warnings",
