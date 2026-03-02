@@ -9,8 +9,10 @@ use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use tauri::AppHandle;
 use walkdir::WalkDir;
 
 const CHART_EXTS: [&str; 4] = ["bms", "bme", "bml", "pms"];
@@ -65,10 +67,14 @@ struct ParsedChartRow {
 pub fn run_scan(
     db: Database,
     logger: Arc<JsonlLogger>,
+    app_handle: Option<AppHandle>,
     root_id: i64,
 ) -> anyhow::Result<ScanResult> {
     let start = Instant::now();
     logger.log("scan_start", map_with_int("root_id", root_id));
+    if let Some(app) = &app_handle {
+        let _ = app.emit_all("scan_progress", json!({"phase":"start","root_id":root_id}));
+    }
 
     let mut conn = db.connect()?;
     let root_path: String = conn
@@ -130,6 +136,12 @@ pub fn run_scan(
         m.insert("chart_count".into(), json!(inserted_charts));
         m
     });
+    if let Some(app) = &app_handle {
+        let _ = app.emit_all(
+            "scan_progress",
+            json!({"phase":"structure_done","root_id":root_id,"packages":packages.len(),"charts":charts.len()}),
+        );
+    }
 
     let mut parsed = 0usize;
     {
@@ -150,6 +162,8 @@ pub fn run_scan(
             rows.collect::<Result<Vec<_>, _>>()?
         };
         let parse_start = Instant::now();
+        let total = charts_to_parse.len();
+        let counter = AtomicUsize::new(0);
         let parsed_rows: Vec<ParsedChartRow> = charts_to_parse
             .into_par_iter()
             .filter_map(|(chart_id, pkg_path, rel_path)| {
@@ -160,6 +174,15 @@ pub fn run_scan(
                 let parsed_bms = bms_parse::parse_chart(&file_path).ok()?;
                 let wav_list_json = serde_json::to_string(&parsed_bms.wav_list).ok()?;
                 let bmp_list_json = serde_json::to_string(&parsed_bms.bmp_list).ok()?;
+                let current = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                if current % 50 == 0 {
+                    if let Some(app) = &app_handle {
+                        let _ = app.emit_all(
+                            "scan_progress",
+                            json!({"phase":"parsing","root_id":root_id,"done":current,"total":total}),
+                        );
+                    }
+                }
                 Some(ParsedChartRow {
                     chart_id,
                     title: parsed_bms.title,
@@ -224,6 +247,12 @@ pub fn run_scan(
             );
             m
         });
+        if let Some(app) = &app_handle {
+            let _ = app.emit_all(
+                "scan_progress",
+                json!({"phase":"parse_done","root_id":root_id,"parsed":parsed,"total":total}),
+            );
+        }
     }
     {
         let conn = db.connect()?;

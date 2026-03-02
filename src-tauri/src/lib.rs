@@ -117,10 +117,12 @@ async fn list_roots(state: tauri::State<'_, AppState>) -> Result<Vec<RootRow>, S
 async fn scan_root(
     state: tauri::State<'_, AppState>,
     root_id: i64,
+    app: tauri::AppHandle,
 ) -> Result<scan::ScanResult, String> {
     let db = state.db.clone();
     let logger = state.logger.clone();
-    tauri::async_runtime::spawn_blocking(move || scan::run_scan(db, logger, root_id))
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || scan::run_scan(db, logger, Some(handle), root_id))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())

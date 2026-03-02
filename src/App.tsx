@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { FolderOpen, RefreshCcw, Search, Trash2 } from "lucide-react";
@@ -133,6 +134,28 @@ export default function App() {
 
   useEffect(() => {
     void Promise.all([loadRoots(), loadSources(), searchCharts(""), loadDuplicates()]);
+    const unlisten = listen("scan_progress", (event) => {
+      const payload = event.payload as {
+        phase?: string;
+        root_id?: number;
+        packages?: number;
+        charts?: number;
+        done?: number;
+        total?: number;
+        parsed?: number;
+      };
+      if (payload.phase === "parsing" && payload.total && payload.done !== undefined) {
+        const pct = Math.min(100, Math.floor(((payload.done as number) / payload.total) * 100));
+        setScanStatus(`解析中 ${payload.done}/${payload.total} (${pct}%)`);
+      } else if (payload.phase === "parse_done" && payload.total) {
+        setScanStatus(`解析完了 ${payload.parsed}/${payload.total}`);
+      } else if (payload.phase === "structure_done") {
+        setScanStatus(`構造走査完了 package ${payload.packages} chart ${payload.charts}`);
+      }
+    });
+    return () => {
+      void unlisten.then((f) => f());
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
