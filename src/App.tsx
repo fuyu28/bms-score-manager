@@ -362,17 +362,18 @@ export default function App() {
                       className="rounded-lg border border-border/70 bg-background/60 p-3"
                     >
                       <div className="mb-1 flex items-center justify-between gap-2">
-                        <code className="truncate text-xs">{g.key}</code>
+                        <code className="min-w-0 break-all text-xs">{g.key}</code>
                         <Badge variant="secondary">{g.charts.length}件</Badge>
                       </div>
                       <div className="space-y-1">
                         {g.charts.map((c) => (
                           <div
                             key={c.chart_id}
-                            className="truncate text-xs text-muted-foreground"
+                            className="grid grid-cols-[72px_minmax(0,1fr)] gap-2 text-xs text-muted-foreground"
                             title={c.full_path}
                           >
-                            #{c.chart_id} {c.full_path}
+                            <span className="font-mono">#{c.chart_id}</span>
+                            <span className="break-all">{c.full_path}</span>
                           </div>
                         ))}
                       </div>
