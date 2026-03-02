@@ -179,8 +179,8 @@ pub fn run_scan(
             })
             .collect();
 
-        let tx = conn.transaction()?;
-        let mut update_stmt = tx.prepare(
+        let mut tx = conn.transaction()?;
+        let mut update_stmt = tx.prepare_cached(
             "UPDATE charts
              SET title=?2, subtitle=?3, artist=?4, subartist=?5, genre=?6, playlevel=?7,
                  bpm=?8, total=?9, player=?10,
@@ -209,6 +209,7 @@ pub fn run_scan(
             ])?;
             parsed += 1;
         }
+        drop(update_stmt);
         tx.commit()?;
         logger.log("db_commit", {
             let mut m = Map::new();
