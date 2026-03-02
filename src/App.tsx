@@ -514,6 +514,14 @@ export default function App() {
           </div>
         ) : null}
       </section>
+      {loading ? (
+        <div className="fixed bottom-3 left-1/2 z-30 -translate-x-1/2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/40">
+          <div className="flex items-center gap-3 px-4 py-2 text-sm font-medium">
+            <div className="h-2 w-2 animate-pulse rounded-full bg-primary-foreground" />
+            <span>処理中... ({loading})</span>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
