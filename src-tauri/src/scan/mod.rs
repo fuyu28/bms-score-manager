@@ -175,7 +175,7 @@ pub fn run_scan(
                 let wav_list_json = serde_json::to_string(&parsed_bms.wav_list).ok()?;
                 let bmp_list_json = serde_json::to_string(&parsed_bms.bmp_list).ok()?;
                 let current = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                if current % 50 == 0 {
+                if (current).is_multiple_of(50) {
                     if let Some(app) = &app_handle {
                         let _ = app.emit(
                             "scan_progress",
