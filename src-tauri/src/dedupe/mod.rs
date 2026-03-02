@@ -117,6 +117,48 @@ pub fn detect_duplicates(db: Database) -> anyhow::Result<Vec<DuplicateGroup>> {
         }
     }
 
+    let mut stmt = conn.prepare(
+        "SELECT c.id, p.root_id, r.path, p.path, c.rel_path, c.file_md5, c.title, c.artist
+         FROM charts c
+         JOIN packages p ON p.id=c.package_id
+         JOIN roots r ON r.id=p.root_id
+         WHERE c.title IS NOT NULL AND c.artist IS NOT NULL
+         ORDER BY c.id",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(DuplicateChart {
+            chart_id: r.get(0)?,
+            root_id: r.get(1)?,
+            root_path: r.get(2)?,
+            package_path: r.get(3)?,
+            rel_path: r.get(4)?,
+            full_path: String::new(),
+            file_md5: r.get(5)?,
+            title: r.get(6)?,
+            artist: r.get(7)?,
+        })
+    })?;
+
+    let mut song_map: HashMap<String, Vec<DuplicateChart>> = HashMap::new();
+    for row in rows {
+        let mut c = row?;
+        let key = normalize_song_key(c.title.as_deref(), c.artist.as_deref());
+        if key.is_empty() {
+            continue;
+        }
+        c.full_path = format!("{}/{}/{}", c.root_path, c.package_path, c.rel_path);
+        song_map.entry(key).or_default().push(c);
+    }
+    for (key, charts) in song_map {
+        if charts.len() >= 2 {
+            groups.push(DuplicateGroup {
+                key,
+                kind: "title_artist_norm".to_string(),
+                charts,
+            });
+        }
+    }
+
     Ok(groups)
 }
 
@@ -283,4 +325,21 @@ fn confirmation_phrase(keep_chart_id: i64, remove_chart_ids: &[i64]) -> String {
     hasher.update(format!("{}:{:?}", keep_chart_id, ids));
     let digest = format!("{:x}", hasher.finalize());
     format!("CONFIRM-{}", &digest[..12])
+}
+
+fn normalize_song_key(title: Option<&str>, artist: Option<&str>) -> String {
+    let t = normalize_text(title.unwrap_or_default());
+    let a = normalize_text(artist.unwrap_or_default());
+    if t.is_empty() || a.is_empty() {
+        String::new()
+    } else {
+        format!("{}|{}", t, a)
+    }
+}
+
+fn normalize_text(s: &str) -> String {
+    s.to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
 }

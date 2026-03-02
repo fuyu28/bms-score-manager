@@ -140,14 +140,14 @@
 - charter(optional)
 - url(optional), url_diff(optional)
 - comment(optional)
-- raw_json (TEXT)  ※必須
+- raw_json (TEXT) ※必須
 - UNIQUE(table_id, md5)
 
 ### 4.8 table_groups（コース/段位/グループ共通）
 
 - id, table_id
 - group_type: "course" | "grade"
-- group_set_index (INT)  ※course外側配列index（ない場合0）
+- group_set_index (INT) ※course外側配列index（ない場合0）
 - name, style(optional)
 - constraints_json(optional), trophies_json(optional)
 - raw_json

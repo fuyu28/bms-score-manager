@@ -325,10 +325,16 @@ async fn execute_dedupe(
 ) -> Result<dedupe::DedupeExecuteResult, String> {
     let db = state.db.clone();
     let logger = state.logger.clone();
-    tauri::async_runtime::spawn_blocking(move || dedupe::execute_merge(db, logger, req))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = dedupe::execute_merge(db.clone(), logger.clone(), req)?;
+        for root_id in &result.rescanned_root_ids {
+            let _ = scan::run_scan(db.clone(), logger.clone(), None, *root_id);
+        }
+        Ok::<_, anyhow::Error>(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

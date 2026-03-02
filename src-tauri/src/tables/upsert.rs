@@ -7,6 +7,7 @@ use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use serde_json::{json, Map};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Serialize)]
@@ -162,54 +163,8 @@ pub async fn import_table(
         [source_id],
         |r| r.get(0),
     )?;
-    tx.execute("DELETE FROM table_entries WHERE table_id=?1", [table_id])?;
-    tx.execute("DELETE FROM table_groups WHERE table_id=?1", [table_id])?;
-
-    for e in &parsed.entries {
-        tx.execute(
-            "INSERT INTO table_entries(
-              table_id, md5, sha256, level_text, title, artist, charter, url, url_diff, comment, raw_json
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-            params![
-                table_id,
-                e.md5,
-                e.sha256,
-                e.level_text,
-                e.title,
-                e.artist,
-                e.charter,
-                e.url,
-                e.url_diff,
-                e.comment,
-                e.raw_json,
-            ],
-        )?;
-    }
-
-    for g in &parsed.groups {
-        tx.execute(
-            "INSERT INTO table_groups(
-              table_id, group_type, group_set_index, name, style, constraints_json, trophies_json, raw_json
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-            params![
-                table_id,
-                g.group_type,
-                g.group_set_index,
-                g.name,
-                g.style,
-                g.constraints_json,
-                g.trophies_json,
-                g.raw_json,
-            ],
-        )?;
-        let group_id = tx.last_insert_rowid();
-        for item in &g.items {
-            tx.execute(
-                "INSERT INTO table_group_items(group_id, md5, title_hint) VALUES (?1,?2,?3)",
-                params![group_id, item.md5, item.title_hint],
-            )?;
-        }
-    }
+    stage_parsed_table(&tx, table_id, &parsed)?;
+    swap_staged_table(&tx, table_id)?;
 
     tx.execute(
         "UPDATE table_sources SET last_success_at=?2, last_error=NULL WHERE id=?1",
@@ -245,6 +200,177 @@ pub async fn import_table(
         group_count: parsed.groups.len(),
         skipped_by_hash: false,
     })
+}
+
+fn stage_parsed_table(
+    tx: &rusqlite::Transaction<'_>,
+    table_id: i64,
+    parsed: &ParsedTable,
+) -> anyhow::Result<()> {
+    tx.execute_batch(
+        "
+        CREATE TEMP TABLE IF NOT EXISTS table_entries_staging (
+          table_id INTEGER NOT NULL,
+          md5 TEXT NOT NULL,
+          sha256 TEXT,
+          level_text TEXT,
+          title TEXT,
+          artist TEXT,
+          charter TEXT,
+          url TEXT,
+          url_diff TEXT,
+          comment TEXT,
+          raw_json TEXT NOT NULL
+        );
+        CREATE TEMP TABLE IF NOT EXISTS table_groups_staging (
+          stage_gid TEXT PRIMARY KEY,
+          table_id INTEGER NOT NULL,
+          group_type TEXT NOT NULL,
+          group_set_index INTEGER NOT NULL,
+          name TEXT,
+          style TEXT,
+          constraints_json TEXT,
+          trophies_json TEXT,
+          raw_json TEXT NOT NULL
+        );
+        CREATE TEMP TABLE IF NOT EXISTS table_group_items_staging (
+          stage_gid TEXT NOT NULL,
+          md5 TEXT NOT NULL,
+          title_hint TEXT
+        );
+        DELETE FROM table_entries_staging;
+        DELETE FROM table_groups_staging;
+        DELETE FROM table_group_items_staging;
+        ",
+    )?;
+
+    for e in &parsed.entries {
+        tx.execute(
+            "INSERT INTO table_entries_staging(
+              table_id, md5, sha256, level_text, title, artist, charter, url, url_diff, comment, raw_json
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![
+                table_id,
+                e.md5,
+                e.sha256,
+                e.level_text,
+                e.title,
+                e.artist,
+                e.charter,
+                e.url,
+                e.url_diff,
+                e.comment,
+                e.raw_json,
+            ],
+        )?;
+    }
+
+    for (idx, g) in parsed.groups.iter().enumerate() {
+        let stage_gid = format!("{}:{}", table_id, idx);
+        tx.execute(
+            "INSERT INTO table_groups_staging(
+              stage_gid, table_id, group_type, group_set_index, name, style, constraints_json, trophies_json, raw_json
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![
+                stage_gid,
+                table_id,
+                g.group_type,
+                g.group_set_index,
+                g.name,
+                g.style,
+                g.constraints_json,
+                g.trophies_json,
+                g.raw_json,
+            ],
+        )?;
+        for item in &g.items {
+            tx.execute(
+                "INSERT INTO table_group_items_staging(stage_gid, md5, title_hint) VALUES (?1,?2,?3)",
+                params![stage_gid, item.md5, item.title_hint],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn swap_staged_table(tx: &rusqlite::Transaction<'_>, table_id: i64) -> anyhow::Result<()> {
+    tx.execute("DELETE FROM table_entries WHERE table_id=?1", [table_id])?;
+    tx.execute(
+        "DELETE FROM table_group_items WHERE group_id IN (SELECT id FROM table_groups WHERE table_id=?1)",
+        [table_id],
+    )?;
+    tx.execute("DELETE FROM table_groups WHERE table_id=?1", [table_id])?;
+
+    tx.execute(
+        "INSERT INTO table_entries(
+          table_id, md5, sha256, level_text, title, artist, charter, url, url_diff, comment, raw_json
+        )
+        SELECT table_id, md5, sha256, level_text, title, artist, charter, url, url_diff, comment, raw_json
+        FROM table_entries_staging
+        WHERE table_id=?1",
+        [table_id],
+    )?;
+
+    let mut stage_to_group_id = HashMap::new();
+    {
+        let mut stmt = tx.prepare(
+            "SELECT stage_gid, group_type, group_set_index, name, style, constraints_json, trophies_json, raw_json
+             FROM table_groups_staging WHERE table_id=?1 ORDER BY stage_gid",
+        )?;
+        let rows = stmt.query_map([table_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?,
+                r.get::<_, String>(7)?,
+            ))
+        })?;
+        for row in rows {
+            let (
+                stage_gid,
+                group_type,
+                group_set_index,
+                name,
+                style,
+                constraints_json,
+                trophies_json,
+                raw_json,
+            ) = row?;
+            tx.execute(
+                "INSERT INTO table_groups(
+                  table_id, group_type, group_set_index, name, style, constraints_json, trophies_json, raw_json
+                ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![table_id, group_type, group_set_index, name, style, constraints_json, trophies_json, raw_json],
+            )?;
+            stage_to_group_id.insert(stage_gid, tx.last_insert_rowid());
+        }
+    }
+
+    {
+        let mut stmt =
+            tx.prepare("SELECT stage_gid, md5, title_hint FROM table_group_items_staging")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (stage_gid, md5, title_hint) = row?;
+            if let Some(group_id) = stage_to_group_id.get(&stage_gid) {
+                tx.execute(
+                    "INSERT INTO table_group_items(group_id, md5, title_hint) VALUES (?1,?2,?3)",
+                    params![group_id, md5, title_hint],
+                )?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn parse_by_pattern(
