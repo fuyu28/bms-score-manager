@@ -249,8 +249,8 @@ export default function App() {
     });
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-[1500px] gap-4 px-3 py-4 sm:px-4">
-      <aside className="w-56 shrink-0 rounded-2xl border border-border/80 bg-card/80 p-3 backdrop-blur">
+    <main className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-4 px-3 py-4 sm:px-4 lg:flex-row">
+      <aside className="w-full shrink-0 rounded-2xl border border-border/80 bg-card/80 p-3 backdrop-blur lg:w-56">
         <h1 className="mb-4 font-['Space_Grotesk'] text-xl font-bold">BMS Explorer</h1>
         <div className="space-y-2">
           <NavButton active={tab === "main"} onClick={() => setTab("main")}>
@@ -303,35 +303,37 @@ export default function App() {
                 </Button>
               </div>
               <div className="overflow-hidden rounded-xl border border-border/80">
-                <div className="grid grid-cols-[90px_1.4fr_1fr_2fr_1.5fr] bg-muted/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <div className="grid grid-cols-[90px_minmax(160px,1.4fr)_minmax(140px,1fr)_minmax(240px,2fr)_minmax(180px,1.5fr)] bg-muted/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <div>ID</div>
                   <div>Title</div>
                   <div>Artist</div>
                   <div>Path</div>
                   <div>MD5</div>
                 </div>
-                <div className="max-h-[68vh] divide-y divide-border overflow-auto">
-                  {charts.map((c) => (
-                    <div
-                      key={c.chart_id}
-                      className="grid grid-cols-[90px_1.4fr_1fr_2fr_1.5fr] px-3 py-2 text-sm hover:bg-accent/25"
-                    >
-                      <div className="font-mono text-xs text-muted-foreground">#{c.chart_id}</div>
-                      <div className="truncate" title={c.title ?? c.rel_path}>
-                        {c.title || c.rel_path}
-                      </div>
-                      <div className="truncate text-muted-foreground">{c.artist || "-"}</div>
+                <div className="max-h-[68vh] overflow-auto">
+                  <div className="min-w-[720px] divide-y divide-border">
+                    {charts.map((c) => (
                       <div
-                        className="truncate text-muted-foreground"
-                        title={`${c.root_path}/${c.package_path}/${c.rel_path}`}
+                        key={c.chart_id}
+                        className="grid grid-cols-[90px_minmax(160px,1.4fr)_minmax(140px,1fr)_minmax(240px,2fr)_minmax(180px,1.5fr)] px-3 py-2 text-sm hover:bg-accent/25"
                       >
-                        {c.root_path}/{c.package_path}/{c.rel_path}
+                        <div className="font-mono text-xs text-muted-foreground">#{c.chart_id}</div>
+                        <div className="truncate" title={c.title ?? c.rel_path}>
+                          {c.title || c.rel_path}
+                        </div>
+                        <div className="truncate text-muted-foreground">{c.artist || "-"}</div>
+                        <div
+                          className="truncate text-muted-foreground"
+                          title={`${c.root_path}/${c.package_path}/${c.rel_path}`}
+                        >
+                          {c.root_path}/{c.package_path}/{c.rel_path}
+                        </div>
+                        <div className="truncate font-mono text-xs text-muted-foreground">
+                          {c.file_md5 || "-"}
+                        </div>
                       </div>
-                      <div className="truncate font-mono text-xs text-muted-foreground">
-                        {c.file_md5 || "-"}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -339,7 +341,7 @@ export default function App() {
         ) : null}
 
         {tab === "dedupe" ? (
-          <div className="grid gap-4 lg:grid-cols-[1.35fr_0.9fr]">
+          <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-[1.35fr_0.9fr]">
             <Card>
               <CardHeader>
                 <CardTitle>重複候補一覧</CardTitle>
@@ -428,7 +430,7 @@ export default function App() {
         ) : null}
 
         {tab === "settings" ? (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
             <Card>
               <CardHeader>
                 <CardTitle>ルート設定</CardTitle>
