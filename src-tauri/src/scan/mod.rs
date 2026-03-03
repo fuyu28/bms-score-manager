@@ -112,6 +112,7 @@ pub fn run_scan(
     let mut chart_stmt = tx.prepare_cached(
         "INSERT INTO charts(package_id, rel_path, ext, file_size, mtime) VALUES(?1, ?2, ?3, ?4, ?5)",
     )?;
+    let scanned_at = Utc::now().to_rfc3339();
 
     for pkg in &packages {
         pkg_stmt.execute(params![
@@ -121,7 +122,7 @@ pub fn run_scan(
             pkg.total_size,
             pkg.file_count,
             pkg.chart_count,
-            Utc::now().to_rfc3339(),
+            scanned_at,
         ])?;
         let package_id = tx.last_insert_rowid();
         if let Some(pkg_charts) = charts_by_package.get(pkg.rel_path.as_str()) {
@@ -270,15 +271,8 @@ pub fn run_scan(
         });
     }
     {
-        let conn = db.connect()?;
-        conn.execute("DELETE FROM charts_fts", [])?;
-        conn.execute(
-            "INSERT INTO charts_fts(rowid, title, artist, path)
-             SELECT c.id, COALESCE(c.title,''), COALESCE(c.artist,''), p.path || '/' || c.rel_path
-             FROM charts c
-             JOIN packages p ON p.id=c.package_id",
-            [],
-        )?;
+        let mut conn = db.connect()?;
+        refresh_charts_fts_for_root(&mut conn, root_id)?;
     }
 
     logger.log("scan_done", {
@@ -547,4 +541,31 @@ fn upsert_song_links(
         count += 1;
     }
     Ok(count)
+}
+
+fn refresh_charts_fts_for_root(
+    conn: &mut rusqlite::Connection,
+    root_id: i64,
+) -> anyhow::Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "DELETE FROM charts_fts
+         WHERE rowid IN (
+           SELECT c.id
+           FROM charts c
+           JOIN packages p ON p.id=c.package_id
+           WHERE p.root_id=?1
+         )",
+        [root_id],
+    )?;
+    tx.execute(
+        "INSERT INTO charts_fts(rowid, title, artist, path)
+         SELECT c.id, COALESCE(c.title,''), COALESCE(c.artist,''), p.path || '/' || c.rel_path
+         FROM charts c
+         JOIN packages p ON p.id=c.package_id
+         WHERE p.root_id=?1",
+        [root_id],
+    )?;
+    tx.commit()?;
+    Ok(())
 }
