@@ -23,13 +23,16 @@ pub async fn fetch_table_payload(
     client: &reqwest::Client,
     input_url: &str,
 ) -> anyhow::Result<FetchedTable> {
-    let page_res = client.get(input_url).send().await?;
+    let input = validate_http_url(input_url, "input_url")?;
+    let page_res = client.get(input).send().await?;
     let page_final = page_res.url().to_string();
+    validate_http_url(&page_final, "page_url_resolved")?;
     let page_html = page_res.text().await?;
 
     let header_ref = extract_meta_bmstable(&page_html)?;
     let page_url = Url::parse(&page_final)?;
     let header_url = page_url.join(&header_ref)?.to_string();
+    validate_http_url(&header_url, "header_url")?;
 
     let (header_final, header_raw, header_json) = fetch_json(client, &header_url).await?;
 
@@ -41,6 +44,7 @@ pub async fn fetch_table_payload(
 
     let header_url_resolved = Url::parse(&header_final)?;
     let data_url = header_url_resolved.join(data_ref)?.to_string();
+    validate_http_url(&data_url, "data_url")?;
     let (data_final_url, data_raw, data_json) = fetch_json(client, &data_url).await?;
 
     let header_hash = sha256_hex(&header_raw);
@@ -64,6 +68,7 @@ async fn fetch_json(
     client: &reqwest::Client,
     url: &str,
 ) -> anyhow::Result<(String, String, Value)> {
+    validate_http_url(url, "fetch_url")?;
     let resp = client
         .get(url)
         .header(ACCEPT, "application/json")
@@ -71,6 +76,7 @@ async fn fetch_json(
         .await?;
 
     let final_url = resp.url().to_string();
+    validate_http_url(&final_url, "resolved_fetch_url")?;
     let status = resp.status();
     if !status.is_success() {
         return Err(anyhow::anyhow!(
@@ -106,4 +112,18 @@ fn sha256_hex(s: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(s.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+fn validate_http_url(url: &str, field: &str) -> anyhow::Result<Url> {
+    let parsed = Url::parse(url)
+        .map_err(|e| anyhow::anyhow!("invalid url for {}: {} ({})", field, e, url))?;
+    match parsed.scheme() {
+        "http" | "https" => Ok(parsed),
+        scheme => Err(anyhow::anyhow!(
+            "unsupported url scheme for {}: {} ({})",
+            field,
+            scheme,
+            url
+        )),
+    }
 }

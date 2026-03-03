@@ -7,7 +7,7 @@ use serde_json::{json, Map};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug, Serialize)]
@@ -190,7 +190,7 @@ pub fn preview_merge(db: Database, req: DedupePreviewRequest) -> anyhow::Result<
             cross_root = true;
         }
 
-        let source = PathBuf::from(&row.1).join(&row.2).join(&row.3);
+        let source = resolve_chart_full_path(&row.1, &row.2, &row.3)?;
         let backup = backup_path(&keep_package_abs, *id, &row.3);
 
         targets.push(path_display(&source));
@@ -259,7 +259,7 @@ pub fn execute_merge(
             rescanned_root_ids.push(root_id);
         }
 
-        let full_path = PathBuf::from(root_path).join(&package_path).join(&rel_path);
+        let full_path = resolve_chart_full_path(&root_path, &package_path, &rel_path)?;
         if !full_path.exists() {
             conn.execute("DELETE FROM charts WHERE id=?1", params![id])?;
             continue;
@@ -326,4 +326,41 @@ fn confirmation_phrase(keep_chart_id: i64, remove_chart_ids: &[i64]) -> String {
     hasher.update(format!("{}:{:?}", keep_chart_id, ids));
     let digest = format!("{:x}", hasher.finalize());
     format!("CONFIRM-{}", &digest[..12])
+}
+
+fn resolve_chart_full_path(
+    root_path: &str,
+    package_path: &str,
+    rel_path: &str,
+) -> anyhow::Result<PathBuf> {
+    validate_relative_db_path(package_path, "package_path")?;
+    validate_relative_db_path(rel_path, "rel_path")?;
+    Ok(PathBuf::from(root_path).join(package_path).join(rel_path))
+}
+
+fn validate_relative_db_path(path: &str, field: &str) -> anyhow::Result<()> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow::anyhow!("{} must not be empty", field));
+    }
+
+    let p = Path::new(trimmed);
+    if p.is_absolute() {
+        return Err(anyhow::anyhow!("{} must be relative: {}", field, trimmed));
+    }
+
+    if p.components().any(|c| {
+        matches!(
+            c,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Err(anyhow::anyhow!(
+            "{} contains invalid path segment: {}",
+            field,
+            trimmed
+        ));
+    }
+
+    Ok(())
 }

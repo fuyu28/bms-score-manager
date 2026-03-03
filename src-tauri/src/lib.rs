@@ -15,6 +15,7 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
+use url::Url;
 
 #[derive(Clone)]
 struct AppState {
@@ -136,6 +137,13 @@ async fn register_table_source(
 ) -> Result<i64, String> {
     let db = state.db.clone();
     tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<i64> {
+        let parsed = Url::parse(&input_url)
+            .map_err(|e| anyhow::anyhow!("invalid table source url: {}", e))?;
+        match parsed.scheme() {
+            "http" | "https" => {}
+            s => return Err(anyhow::anyhow!("unsupported table source scheme: {}", s)),
+        }
+
         let conn = db.connect()?;
         conn.execute(
             "INSERT INTO table_sources(input_url, enabled) VALUES(?1, 1)
