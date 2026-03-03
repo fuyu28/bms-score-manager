@@ -1,7 +1,16 @@
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderOpen, RefreshCcw, Search, Settings2, ShieldAlert, Trash2 } from "lucide-react";
+import {
+  FolderOpen,
+  Plus,
+  RefreshCcw,
+  Search,
+  Settings2,
+  ShieldAlert,
+  Trash2,
+  X,
+} from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "./components/ui/badge";
@@ -82,7 +91,8 @@ export default function App() {
   const [rootPath, setRootPath] = useState("");
   const [scanLog, setScanLog] = useState<ScanResult | null>(null);
 
-  const [tableUrlBulk, setTableUrlBulk] = useState("");
+  const [tableUrlInput, setTableUrlInput] = useState("");
+  const [tableUrlList, setTableUrlList] = useState<string[]>([]);
   const [sources, setSources] = useState<TableSource[]>([]);
   const [lastImport, setLastImport] = useState<ImportResult | null>(null);
   const [ownership, setOwnership] = useState<OwnershipSummary | null>(null);
@@ -199,20 +209,26 @@ export default function App() {
 
   const addTableSourcesBulk = () =>
     wrap("add-table-bulk", async () => {
-      const urls = Array.from(
-        new Set(
-          tableUrlBulk
-            .split(/\r?\n/)
-            .map((v) => v.trim())
-            .filter(Boolean),
-        ),
-      );
+      const urls = Array.from(new Set(tableUrlList.map((v) => v.trim()).filter(Boolean)));
       for (const inputUrl of urls) {
         await invoke<number>("register_table_source", { inputUrl });
       }
-      setTableUrlBulk("");
+      setTableUrlInput("");
+      setTableUrlList([]);
       await loadSources();
     });
+
+  const addTableUrlItem = () => {
+    const next = tableUrlInput.trim();
+    if (!next) return;
+    if (tableUrlList.includes(next)) return;
+    setTableUrlList((prev) => [...prev, next]);
+    setTableUrlInput("");
+  };
+
+  const removeTableUrlItem = (url: string) => {
+    setTableUrlList((prev) => prev.filter((v) => v !== url));
+  };
 
   const importSource = (sourceId: number) =>
     wrap(`import-${sourceId}`, async () => {
@@ -537,22 +553,58 @@ export default function App() {
               <Card className="bms-panel">
                 <CardHeader>
                   <CardTitle>難易度表取り込み設定</CardTitle>
-                  <CardDescription>URLを複数行で登録し、一括取り込みできます。</CardDescription>
+                  <CardDescription>URLをリストに追加し、不要な項目を削除してから登録できます。</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <Textarea
-                    value={tableUrlBulk}
-                    onChange={(e) => setTableUrlBulk(e.currentTarget.value)}
-                    placeholder={
-                      "https://example.com/table-a.html\nhttps://example.com/table-b.html"
-                    }
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      value={tableUrlInput}
+                      onChange={(e) => setTableUrlInput(e.currentTarget.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addTableUrlItem();
+                        }
+                      }}
+                      placeholder="https://example.com/table-a.html"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={addTableUrlItem}
+                      disabled={!tableUrlInput.trim()}
+                    >
+                      <Plus className="mr-1 h-4 w-4" />
+                      追加
+                    </Button>
+                  </div>
+                  <div className="max-h-40 space-y-2 overflow-auto rounded-md border border-border/70 bg-background/60 p-2">
+                    {tableUrlList.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">追加予定URLはありません。</div>
+                    ) : (
+                      tableUrlList.map((url) => (
+                        <div
+                          key={url}
+                          className="flex items-center justify-between gap-2 rounded-md border border-border/70 bg-card/80 px-2 py-1.5"
+                        >
+                          <span className="truncate text-xs">{url}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-muted-foreground hover:text-destructive"
+                            onClick={() => removeTableUrlItem(url)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <Button
                       onClick={() => void addTableSourcesBulk()}
-                      disabled={!tableUrlBulk.trim() || !!loading}
+                      disabled={tableUrlList.length === 0 || !!loading}
                     >
-                      複数登録
+                      リストを登録
                     </Button>
                     <Button
                       variant="secondary"
