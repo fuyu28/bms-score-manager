@@ -2,6 +2,8 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
+  ChevronDown,
+  ChevronRight,
   FolderOpen,
   Plus,
   RefreshCcw,
@@ -80,11 +82,73 @@ type DedupePreview = {
   confirmation_phrase: string;
 };
 
+type RootTreeNode = {
+  key: string;
+  label: string;
+  root: RootRow | null;
+  children: RootTreeNode[];
+};
+
 const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString("ja-JP") : "-");
+
+function normalizePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function pathParts(path: string) {
+  const normalized = normalizePath(path);
+  const absoluteUnix = normalized.startsWith("/");
+  const parts = normalized.split("/").filter(Boolean);
+  return { normalized, absoluteUnix, parts };
+}
+
+function buildRootTree(roots: RootRow[]): RootTreeNode[] {
+  const nodeMap = new Map<string, RootTreeNode>();
+  const topNodes: RootTreeNode[] = [];
+
+  const sorted = [...roots].sort(
+    (a, b) => pathParts(a.path).parts.length - pathParts(b.path).parts.length,
+  );
+
+  for (const root of sorted) {
+    const { absoluteUnix, parts } = pathParts(root.path);
+    if (parts.length === 0) continue;
+
+    let current = "";
+    for (let i = 0; i < parts.length; i++) {
+      const seg = parts[i];
+      if (i === 0) {
+        current = absoluteUnix ? `/${seg}` : seg;
+      } else {
+        current = `${current}/${seg}`;
+      }
+
+      let node = nodeMap.get(current);
+      if (!node) {
+        node = { key: current, label: seg, root: null, children: [] };
+        nodeMap.set(current, node);
+
+        if (i === 0) {
+          topNodes.push(node);
+        } else {
+          const parentKey = current.slice(0, current.lastIndexOf("/"));
+          const parent = nodeMap.get(parentKey);
+          if (parent) parent.children.push(node);
+        }
+      }
+
+      if (i === parts.length - 1) {
+        node.root = root;
+      }
+    }
+  }
+
+  return topNodes;
+}
 
 export default function App() {
   const [tab, setTab] = useState<TabKey>("main");
-  const [message, setMessage] = useState<string>("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState<string | null>(null);
 
   const [roots, setRoots] = useState<RootRow[]>([]);
@@ -106,8 +170,11 @@ export default function App() {
   const [mergeKeepId, setMergeKeepId] = useState<number | null>(null);
   const [mergePreview, setMergePreview] = useState<DedupePreview | null>(null);
 
-  const [scanStatus, setScanStatus] = useState<string>("");
+  const [scanStatus, setScanStatus] = useState("");
   const [selectedRootId, setSelectedRootId] = useState<number | null>(null);
+  const [expandedTreeKeys, setExpandedTreeKeys] = useState<Set<string>>(new Set());
+
+  const rootTree = useMemo(() => buildRootTree(roots), [roots]);
 
   const visibleCharts = useMemo(
     () => (selectedRootId == null ? charts : charts.filter((c) => c.root_id === selectedRootId)),
@@ -147,7 +214,6 @@ export default function App() {
     const unlisten = listen("scan_progress", (event) => {
       const payload = event.payload as {
         phase?: string;
-        root_id?: number;
         packages?: number;
         charts?: number;
         done?: number;
@@ -176,11 +242,25 @@ export default function App() {
   }, [roots, selectedRootId]);
 
   useEffect(() => {
+    if (expandedTreeKeys.size > 0 || rootTree.length === 0) return;
+    setExpandedTreeKeys(new Set(rootTree.map((n) => n.key)));
+  }, [rootTree, expandedTreeKeys.size]);
+
+  useEffect(() => {
     if (tab !== "dedupe" || dedupeLoaded) return;
     setDedupeLoaded(true);
     void loadDuplicates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, dedupeLoaded]);
+
+  const toggleTree = (key: string) => {
+    setExpandedTreeKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const pickRootDirectory = () =>
     wrap("pick-root", async () => {
@@ -254,9 +334,8 @@ export default function App() {
     group.charts.map((c) => c.chart_id).filter((id) => id !== keepId);
 
   const openMergeModal = (group: DuplicateGroup) => {
-    const defaultKeep = group.charts[0]?.chart_id ?? null;
     setActiveGroup(group);
-    setMergeKeepId(defaultKeep);
+    setMergeKeepId(group.charts[0]?.chart_id ?? null);
     setMergePreview(null);
   };
 
@@ -311,22 +390,20 @@ export default function App() {
             <Settings2 className="mr-1 inline h-4 w-4" />設定
           </NavButton>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            className="border border-border bg-secondary/70"
-            onClick={() =>
-              void Promise.all([
-                loadRoots(),
-                loadSources(),
-                searchCharts(query),
-                tab === "dedupe" ? loadDuplicates() : Promise.resolve(),
-              ])
-            }
-          >
-            <RefreshCcw className="mr-2 h-4 w-4" />全体更新
-          </Button>
-        </div>
+        <Button
+          variant="secondary"
+          className="border border-border bg-secondary/70"
+          onClick={() =>
+            void Promise.all([
+              loadRoots(),
+              loadSources(),
+              searchCharts(query),
+              tab === "dedupe" ? loadDuplicates() : Promise.resolve(),
+            ])
+          }
+        >
+          <RefreshCcw className="mr-2 h-4 w-4" />全体更新
+        </Button>
       </header>
 
       <div className="bms-body">
@@ -343,25 +420,20 @@ export default function App() {
               ルート追加
             </Button>
           </div>
-          <div className="mt-3 max-h-[62vh] space-y-2 overflow-auto pr-1">
-            {roots.map((r) => (
-              <div
-                key={r.id}
-                className={[
-                  "rounded-md border p-2",
-                  selectedRootId === r.id ? "border-primary/60 bg-primary/10" : "border-border/70 bg-background/70",
-                ].join(" ")}
-              >
-                <button type="button" className="block w-full text-left" onClick={() => setSelectedRootId(r.id)}>
-                  <div className="truncate text-sm font-medium">{r.path}</div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">{fmt(r.created_at)}</div>
-                </button>
-                <Button size="sm" className="mt-2 w-full" onClick={() => void scanRoot(r.id)} disabled={!!loading}>
-                  スキャン
-                </Button>
-              </div>
-            ))}
+
+          <div className="mt-3 max-h-[62vh] overflow-auto pr-1">
+            <TreeList
+              nodes={rootTree}
+              depth={0}
+              expandedKeys={expandedTreeKeys}
+              selectedRootId={selectedRootId}
+              loading={loading}
+              onToggle={toggleTree}
+              onSelectRoot={setSelectedRootId}
+              onScan={scanRoot}
+            />
           </div>
+
           {scanLog ? (
             <div className="mt-3 rounded-md bg-secondary/40 p-2 text-xs">
               root#{scanLog.root_id} package {scanLog.package_count} chart {scanLog.chart_count} parsed {scanLog.parsed_count}
@@ -484,12 +556,7 @@ export default function App() {
                       tableUrlList.map((url) => (
                         <div key={url} className="flex items-center justify-between gap-2 rounded-md border border-border/70 bg-card/80 px-2 py-1.5">
                           <span className="truncate text-xs">{url}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-muted-foreground hover:text-destructive"
-                            onClick={() => removeTableUrlItem(url)}
-                          >
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground hover:text-destructive" onClick={() => removeTableUrlItem(url)}>
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
@@ -519,14 +586,10 @@ export default function App() {
                     ))}
                   </div>
                   {lastImport ? (
-                    <div className="rounded-md bg-accent/40 p-2 text-xs">
-                      table#{lastImport.table_id} pattern {lastImport.pattern} entries {lastImport.entry_count}
-                    </div>
+                    <div className="rounded-md bg-accent/40 p-2 text-xs">table#{lastImport.table_id} pattern {lastImport.pattern} entries {lastImport.entry_count}</div>
                   ) : null}
                   {ownership ? (
-                    <div className="rounded-md bg-secondary/40 p-2 text-xs">
-                      所持 {ownership.owned_entries} / 未所持 {ownership.missing_entries} / 合計 {ownership.total_entries}
-                    </div>
+                    <div className="rounded-md bg-secondary/40 p-2 text-xs">所持 {ownership.owned_entries} / 未所持 {ownership.missing_entries} / 合計 {ownership.total_entries}</div>
                   ) : null}
                 </CardContent>
               </Card>
@@ -553,6 +616,81 @@ export default function App() {
 
       <StatusBar loading={loading} scanStatus={scanStatus} />
     </main>
+  );
+}
+
+function TreeList({
+  nodes,
+  depth,
+  expandedKeys,
+  selectedRootId,
+  loading,
+  onToggle,
+  onSelectRoot,
+  onScan,
+}: {
+  nodes: RootTreeNode[];
+  depth: number;
+  expandedKeys: Set<string>;
+  selectedRootId: number | null;
+  loading: string | null;
+  onToggle: (key: string) => void;
+  onSelectRoot: (id: number) => void;
+  onScan: (id: number) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      {nodes.map((node) => {
+        const open = expandedKeys.has(node.key);
+        const hasChildren = node.children.length > 0;
+        const selected = node.root?.id != null && selectedRootId === node.root.id;
+        return (
+          <div key={node.key}>
+            <div
+              className={[
+                "flex items-center gap-1 rounded-md border px-1.5 py-1",
+                selected ? "border-primary/60 bg-primary/10" : "border-border/60 bg-background/70",
+              ].join(" ")}
+              style={{ marginLeft: `${depth * 12}px` }}
+            >
+              <button
+                type="button"
+                className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-accent/40"
+                onClick={() => hasChildren && onToggle(node.key)}
+                disabled={!hasChildren}
+              >
+                {hasChildren ? (open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />) : <span className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                type="button"
+                className="min-w-0 flex-1 truncate text-left text-sm"
+                onClick={() => node.root && onSelectRoot(node.root.id)}
+                title={node.root?.path ?? node.key}
+              >
+                {node.label}
+              </button>
+              {node.root ? (
+                <Button size="sm" className="h-6 px-2 text-[11px]" onClick={() => void onScan(node.root!.id)} disabled={!!loading}>
+                  scan
+                </Button>
+              ) : null}
+            </div>
+            {hasChildren && open ? (
+              <TreeList
+                nodes={node.children}
+                depth={depth + 1}
+                expandedKeys={expandedKeys}
+                selectedRootId={selectedRootId}
+                loading={loading}
+                onToggle={onToggle}
+                onSelectRoot={onSelectRoot}
+                onScan={onScan}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -620,12 +758,7 @@ function DedupeMergeModal({
               <Button variant="outline" className="flex-1" onClick={onPreview} disabled={!keepId || !!loading}>
                 プレビュー更新
               </Button>
-              <Button
-                variant="destructive"
-                className="flex-1"
-                onClick={onExecute}
-                disabled={!preview || preview.cross_root || !!loading}
-              >
+              <Button variant="destructive" className="flex-1" onClick={onExecute} disabled={!preview || preview.cross_root || !!loading}>
                 <Trash2 className="mr-1 h-4 w-4" />実行
               </Button>
             </div>
@@ -668,9 +801,7 @@ function DedupeMergeModal({
               <div className="rounded-md border border-border/70 bg-background/70 p-3 text-xs">
                 <div>削除対象: {preview.remove_count}件</div>
                 <div>root跨ぎ: {preview.cross_root ? "あり（実行不可）" : "なし"}</div>
-                <div>
-                  確認フレーズ: <code>{preview.confirmation_phrase}</code>
-                </div>
+                <div>確認フレーズ: <code>{preview.confirmation_phrase}</code></div>
                 <div className="mt-2 max-h-28 overflow-auto pr-1">
                   {preview.operations.map((op) => (
                     <div key={op.source_path} className="mb-1 rounded border border-border/50 bg-card/70 p-2">
@@ -701,10 +832,7 @@ function NavButton({
     <button
       type="button"
       onClick={onClick}
-      className={[
-        "bms-nav-button px-3 py-2 text-left text-sm transition",
-        active ? "active" : "",
-      ].join(" ")}
+      className={["bms-nav-button px-3 py-2 text-left text-sm transition", active ? "active" : ""].join(" ")}
     >
       {children}
     </button>
