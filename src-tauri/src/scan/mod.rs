@@ -545,26 +545,20 @@ fn upsert_song_links(
 
 fn refresh_charts_fts_for_root(
     conn: &mut rusqlite::Connection,
-    root_id: i64,
+    _root_id: i64,
 ) -> anyhow::Result<()> {
     let tx = conn.transaction()?;
+    // charts_fts is a contentless FTS5 table; regular DELETE is not supported.
     tx.execute(
-        "DELETE FROM charts_fts
-         WHERE rowid IN (
-           SELECT c.id
-           FROM charts c
-           JOIN packages p ON p.id=c.package_id
-           WHERE p.root_id=?1
-         )",
-        [root_id],
+        "INSERT INTO charts_fts(charts_fts) VALUES('delete-all')",
+        [],
     )?;
     tx.execute(
         "INSERT INTO charts_fts(rowid, title, artist, path)
          SELECT c.id, COALESCE(c.title,''), COALESCE(c.artist,''), p.path || '/' || c.rel_path
          FROM charts c
-         JOIN packages p ON p.id=c.package_id
-         WHERE p.root_id=?1",
-        [root_id],
+         JOIN packages p ON p.id=c.package_id",
+        [],
     )?;
     tx.commit()?;
     Ok(())
