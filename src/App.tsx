@@ -106,6 +106,7 @@ export default function App() {
   const [preview, setPreview] = useState<DedupePreview | null>(null);
   const [scanStatus, setScanStatus] = useState<string>("");
   const [selectedRootId, setSelectedRootId] = useState<number | null>(null);
+  const [dedupeLoaded, setDedupeLoaded] = useState(false);
 
   const removeIds = useMemo(
     () =>
@@ -149,7 +150,7 @@ export default function App() {
     );
 
   useEffect(() => {
-    void Promise.all([loadRoots(), loadSources(), searchCharts(""), loadDuplicates()]);
+    void Promise.all([loadRoots(), loadSources(), searchCharts("")]);
     const unlisten = listen("scan_progress", (event) => {
       const payload = event.payload as {
         phase?: string;
@@ -179,6 +180,12 @@ export default function App() {
       setSelectedRootId(roots[0].id);
     }
   }, [roots, selectedRootId]);
+  useEffect(() => {
+    if (tab !== "dedupe" || dedupeLoaded) return;
+    setDedupeLoaded(true);
+    void loadDuplicates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, dedupeLoaded]);
 
   const pickRootDirectory = () =>
     wrap("pick-root", async () => {
@@ -303,7 +310,12 @@ export default function App() {
             variant="secondary"
             className="border border-border bg-secondary/70"
             onClick={() =>
-              void Promise.all([loadRoots(), loadSources(), searchCharts(query), loadDuplicates()])
+              void Promise.all([
+                loadRoots(),
+                loadSources(),
+                searchCharts(query),
+                tab === "dedupe" ? loadDuplicates() : Promise.resolve(),
+              ])
             }
           >
             <RefreshCcw className="mr-2 h-4 w-4" />
