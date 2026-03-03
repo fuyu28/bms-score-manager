@@ -245,40 +245,65 @@ async fn search_charts(
         let conn = db.connect()?;
         let limit = params.limit.unwrap_or(100).max(1);
         let offset = params.offset.unwrap_or(0).max(0);
-        let q = if params.query.trim().is_empty() {
-            "*".to_string()
-        } else {
-            params.query
-        };
-        let mut stmt = conn.prepare(
-            "SELECT c.id, p.root_id, p.id, c.title, c.artist, c.rel_path, c.file_md5, r.path, p.path
-             FROM charts c
-             JOIN charts_fts ON charts_fts.rowid=c.id
-             JOIN packages p ON p.id=c.package_id
-             JOIN roots r ON r.id=p.root_id
-             WHERE charts_fts MATCH ?1
-             ORDER BY c.id
-             LIMIT ?2 OFFSET ?3",
-        )?;
-        let rows = stmt.query_map(params![q, limit, offset], |r| {
-            Ok(ChartSearchRow {
-                chart_id: r.get(0)?,
-                root_id: r.get(1)?,
-                package_id: r.get(2)?,
-                title: r.get(3)?,
-                artist: r.get(4)?,
-                rel_path: r.get(5)?,
-                file_md5: r.get(6)?,
-                root_path: r.get(7)?,
-                package_path: r.get(8)?,
-            })
-        })?;
+        if params.query.trim().is_empty() {
+            let mut stmt = conn.prepare(
+                "SELECT c.id, p.root_id, p.id, c.title, c.artist, c.rel_path, c.file_md5, r.path, p.path
+                 FROM charts c
+                 JOIN packages p ON p.id=c.package_id
+                 JOIN roots r ON r.id=p.root_id
+                 ORDER BY c.id
+                 LIMIT ?1 OFFSET ?2",
+            )?;
+            let rows = stmt.query_map(params![limit, offset], |r| {
+                Ok(ChartSearchRow {
+                    chart_id: r.get(0)?,
+                    root_id: r.get(1)?,
+                    package_id: r.get(2)?,
+                    title: r.get(3)?,
+                    artist: r.get(4)?,
+                    rel_path: r.get(5)?,
+                    file_md5: r.get(6)?,
+                    root_path: r.get(7)?,
+                    package_path: r.get(8)?,
+                })
+            })?;
 
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row?);
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row?);
+            }
+            Ok(out)
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT c.id, p.root_id, p.id, c.title, c.artist, c.rel_path, c.file_md5, r.path, p.path
+                 FROM charts c
+                 JOIN charts_fts ON charts_fts.rowid=c.id
+                 JOIN packages p ON p.id=c.package_id
+                 JOIN roots r ON r.id=p.root_id
+                 WHERE charts_fts MATCH ?1
+                 ORDER BY c.id
+                 LIMIT ?2 OFFSET ?3",
+            )?;
+            let rows = stmt.query_map(params![params.query, limit, offset], |r| {
+                Ok(ChartSearchRow {
+                    chart_id: r.get(0)?,
+                    root_id: r.get(1)?,
+                    package_id: r.get(2)?,
+                    title: r.get(3)?,
+                    artist: r.get(4)?,
+                    rel_path: r.get(5)?,
+                    file_md5: r.get(6)?,
+                    root_path: r.get(7)?,
+                    package_path: r.get(8)?,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row?);
+            }
+            Ok(out)
         }
-        Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -329,7 +354,9 @@ async fn execute_dedupe(
     tauri::async_runtime::spawn_blocking(move || {
         let result = dedupe::execute_merge(db.clone(), logger.clone(), req)?;
         for root_id in &result.rescanned_root_ids {
-            let _ = scan::run_scan(db.clone(), logger.clone(), None, *root_id);
+            scan::run_scan(db.clone(), logger.clone(), None, *root_id).map_err(|e| {
+                anyhow::anyhow!("post-dedupe rescan failed (root_id={}): {}", root_id, e)
+            })?;
         }
         Ok::<_, anyhow::Error>(result)
     })

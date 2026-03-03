@@ -10,21 +10,20 @@ pub fn normalize_song_key(title: Option<&str>, artist: Option<&str>) -> Option<S
     }
 }
 
-pub fn estimate_package_meta(
-    rows: &[(Option<String>, Option<String>)],
-) -> (Option<String>, Option<String>) {
-    let titles: Vec<String> = rows
-        .iter()
-        .filter_map(|(t, _)| t.as_ref())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    let artists: Vec<String> = rows
-        .iter()
-        .filter_map(|(_, a)| a.as_ref())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+pub fn estimate_package_meta<'a, I>(rows: I) -> (Option<String>, Option<String>)
+where
+    I: IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
+{
+    let mut titles = Vec::new();
+    let mut artists = Vec::new();
+    for (title, artist) in rows {
+        if let Some(t) = title.map(str::trim).filter(|s| !s.is_empty()) {
+            titles.push(t.to_string());
+        }
+        if let Some(a) = artist.map(str::trim).filter(|s| !s.is_empty()) {
+            artists.push(a.to_string());
+        }
+    }
 
     let title_prefix = common_prefix_with_one_skip(&titles);
     let artist_prefix = common_prefix_with_one_skip(&artists);

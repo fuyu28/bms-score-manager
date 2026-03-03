@@ -71,6 +71,15 @@ async fn fetch_json(
         .await?;
 
     let final_url = resp.url().to_string();
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(anyhow::anyhow!(
+            "http status error: {} ({})",
+            status,
+            final_url
+        ));
+    }
+
     let body = resp.text().await?;
     let json: Value = serde_json::from_str(&body)
         .map_err(|e| anyhow::anyhow!("json parse failed: {} ({})", e, final_url))?;
