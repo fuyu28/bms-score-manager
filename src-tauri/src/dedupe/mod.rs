@@ -1,5 +1,6 @@
 use crate::db::Database;
 use crate::logging::JsonlLogger;
+use crate::song_norm;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map};
@@ -142,10 +143,10 @@ pub fn detect_duplicates(db: Database) -> anyhow::Result<Vec<DuplicateGroup>> {
     let mut song_map: HashMap<String, Vec<DuplicateChart>> = HashMap::new();
     for row in rows {
         let mut c = row?;
-        let key = normalize_song_key(c.title.as_deref(), c.artist.as_deref());
-        if key.is_empty() {
+        let Some(key) = song_norm::normalize_song_key(c.title.as_deref(), c.artist.as_deref())
+        else {
             continue;
-        }
+        };
         c.full_path = format!("{}/{}/{}", c.root_path, c.package_path, c.rel_path);
         song_map.entry(key).or_default().push(c);
     }
@@ -325,21 +326,4 @@ fn confirmation_phrase(keep_chart_id: i64, remove_chart_ids: &[i64]) -> String {
     hasher.update(format!("{}:{:?}", keep_chart_id, ids));
     let digest = format!("{:x}", hasher.finalize());
     format!("CONFIRM-{}", &digest[..12])
-}
-
-fn normalize_song_key(title: Option<&str>, artist: Option<&str>) -> String {
-    let t = normalize_text(title.unwrap_or_default());
-    let a = normalize_text(artist.unwrap_or_default());
-    if t.is_empty() || a.is_empty() {
-        String::new()
-    } else {
-        format!("{}|{}", t, a)
-    }
-}
-
-fn normalize_text(s: &str) -> String {
-    s.to_ascii_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
 }

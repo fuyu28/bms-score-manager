@@ -1,6 +1,7 @@
 use crate::bms_parse;
 use crate::db::Database;
 use crate::logging::JsonlLogger;
+use crate::song_norm;
 use chrono::Utc;
 use rayon::prelude::*;
 use rusqlite::{params, OptionalExtension, Statement};
@@ -63,6 +64,9 @@ struct ParsedChartRow {
     file_md5: String,
     bms_norm_hash: Option<String>,
 }
+
+type PackageChartMetaRow = (i64, Option<String>, Option<String>);
+type PackageChartMetaMap = HashMap<i64, Vec<PackageChartMetaRow>>;
 
 pub fn run_scan(
     db: Database,
@@ -255,6 +259,17 @@ pub fn run_scan(
         }
     }
     {
+        let mut conn = db.connect()?;
+        let linked = refresh_song_links(&mut conn, root_id)?;
+        logger.log("db_commit", {
+            let mut m = Map::new();
+            m.insert("event_scope".into(), json!("song_links_refresh"));
+            m.insert("root_id".into(), json!(root_id));
+            m.insert("linked_charts".into(), json!(linked));
+            m
+        });
+    }
+    {
         let conn = db.connect()?;
         conn.execute("DELETE FROM charts_fts", [])?;
         conn.execute(
@@ -405,4 +420,102 @@ where
         ])?;
     }
     Ok(())
+}
+
+fn refresh_song_links(conn: &mut rusqlite::Connection, root_id: i64) -> anyhow::Result<usize> {
+    let mut package_rows: PackageChartMetaMap = HashMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT p.id, c.id, c.title, c.artist
+             FROM packages p
+             LEFT JOIN charts c ON c.package_id=p.id
+             WHERE p.root_id=?1
+             ORDER BY p.id, c.id",
+        )?;
+        let mut rows = stmt.query([root_id])?;
+        while let Some(row) = rows.next()? {
+            let package_id: i64 = row.get(0)?;
+            let chart_id: Option<i64> = row.get(1)?;
+            let title: Option<String> = row.get(2)?;
+            let artist: Option<String> = row.get(3)?;
+            if let Some(chart_id) = chart_id {
+                package_rows
+                    .entry(package_id)
+                    .or_default()
+                    .push((chart_id, title, artist));
+            }
+        }
+    }
+
+    let tx = conn.transaction()?;
+    tx.execute(
+        "DELETE FROM song_links
+         WHERE chart_id IN (
+           SELECT c.id
+           FROM charts c
+           JOIN packages p ON p.id=c.package_id
+           WHERE p.root_id=?1
+         )",
+        [root_id],
+    )?;
+
+    let mut linked_charts = 0usize;
+    for charts in package_rows.values() {
+        let rows: Vec<(Option<String>, Option<String>)> = charts
+            .iter()
+            .map(|(_, title, artist)| (title.clone(), artist.clone()))
+            .collect();
+        let (mut canonical_title, mut canonical_artist) = song_norm::estimate_package_meta(&rows);
+        if canonical_title.is_none() || canonical_artist.is_none() {
+            for (_, title, artist) in charts {
+                let t = song_norm::normalize_title(title.as_deref().unwrap_or_default());
+                let a = song_norm::normalize_artist(artist.as_deref().unwrap_or_default());
+                if !t.is_empty() && !a.is_empty() {
+                    canonical_title = Some(t);
+                    canonical_artist = Some(a);
+                    break;
+                }
+            }
+        }
+
+        let (Some(canonical_title), Some(canonical_artist)) = (canonical_title, canonical_artist)
+        else {
+            continue;
+        };
+
+        let song_id: i64 = if let Some(id) = tx
+            .query_row(
+                "SELECT id FROM songs WHERE canonical_title=?1 AND canonical_artist=?2 LIMIT 1",
+                params![canonical_title, canonical_artist],
+                |r| r.get(0),
+            )
+            .optional()?
+        {
+            id
+        } else {
+            tx.execute(
+                "INSERT INTO songs(canonical_title, canonical_artist) VALUES(?1, ?2)",
+                params![canonical_title, canonical_artist],
+            )?;
+            tx.last_insert_rowid()
+        };
+
+        let confidence = if charts.len() >= 2 { 0.95_f64 } else { 0.7_f64 };
+        for (chart_id, _, _) in charts {
+            tx.execute(
+                "INSERT OR REPLACE INTO song_links(song_id, chart_id, confidence, user_confirmed)
+                 VALUES(?1, ?2, ?3, 0)",
+                params![song_id, chart_id, confidence],
+            )?;
+            linked_charts += 1;
+        }
+    }
+
+    tx.execute(
+        "DELETE FROM songs
+         WHERE id NOT IN (SELECT DISTINCT song_id FROM song_links)",
+        [],
+    )?;
+    tx.commit()?;
+    Ok(linked_charts)
 }

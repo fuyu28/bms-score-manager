@@ -3,6 +3,7 @@ mod db;
 mod dedupe;
 mod logging;
 mod scan;
+mod song_norm;
 mod tables;
 
 use chrono::Utc;
