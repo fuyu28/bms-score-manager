@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderOpen, RefreshCcw, Search, Trash2 } from "lucide-react";
+import { FolderOpen, RefreshCcw, Search, Settings2, ShieldAlert, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "./components/ui/badge";
@@ -43,6 +43,7 @@ type OwnershipSummary = {
 };
 type ChartRow = {
   chart_id: number;
+  root_id: number;
   title?: string | null;
   artist?: string | null;
   rel_path: string;
@@ -94,6 +95,7 @@ export default function App() {
   const [removeChartIds, setRemoveChartIds] = useState("");
   const [preview, setPreview] = useState<DedupePreview | null>(null);
   const [scanStatus, setScanStatus] = useState<string>("");
+  const [selectedRootId, setSelectedRootId] = useState<number | null>(null);
 
   const removeIds = useMemo(
     () =>
@@ -102,6 +104,10 @@ export default function App() {
         .map((v) => Number(v))
         .filter((v) => Number.isFinite(v) && v > 0),
     [removeChartIds],
+  );
+  const visibleCharts = useMemo(
+    () => (selectedRootId == null ? charts : charts.filter((c) => c.root_id === selectedRootId)),
+    [charts, selectedRootId],
   );
 
   const wrap = async (key: string, fn: () => Promise<void>) => {
@@ -158,6 +164,11 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    if (selectedRootId == null && roots.length > 0) {
+      setSelectedRootId(roots[0].id);
+    }
+  }, [roots, selectedRootId]);
 
   const pickRootDirectory = () =>
     wrap("pick-root", async () => {
@@ -249,24 +260,32 @@ export default function App() {
     });
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-4 px-3 py-4 sm:px-4 lg:flex-row">
-      <aside className="w-full shrink-0 rounded-2xl border border-border/80 bg-card/80 p-3 backdrop-blur lg:w-56">
-        <h1 className="mb-4 font-['Space_Grotesk'] text-xl font-bold">BMS Explorer</h1>
-        <div className="space-y-2">
+    <main className="bms-shell">
+      <header className="bms-topbar">
+        <div className="flex items-center gap-3">
+          <h1 className="font-['Chakra_Petch'] text-xl font-semibold tracking-wide">
+            BeMusic Browser
+          </h1>
+          <div className="hidden h-4 w-px bg-border/80 md:block" />
+          <div className="hidden text-xs text-muted-foreground md:block">BMS Score Manager</div>
+        </div>
+        <div className="bms-topnav">
           <NavButton active={tab === "main"} onClick={() => setTab("main")}>
-            メイン
+            譜面一覧
           </NavButton>
           <NavButton active={tab === "dedupe"} onClick={() => setTab("dedupe")}>
+            <ShieldAlert className="mr-1 inline h-4 w-4" />
             重複整理
           </NavButton>
           <NavButton active={tab === "settings"} onClick={() => setTab("settings")}>
+            <Settings2 className="mr-1 inline h-4 w-4" />
             設定
           </NavButton>
         </div>
-        <div className="mt-4 border-t border-border pt-3">
+        <div className="flex items-center gap-2">
           <Button
             variant="secondary"
-            className="w-full"
+            className="border border-border bg-secondary/70"
             onClick={() =>
               void Promise.all([loadRoots(), loadSources(), searchCharts(query), loadDuplicates()])
             }
@@ -275,276 +294,317 @@ export default function App() {
             全体更新
           </Button>
         </div>
-      </aside>
+      </header>
 
-      <section className="min-w-0 flex-1 rounded-2xl border border-border/80 bg-card/70 p-4 backdrop-blur">
-        {message ? (
-          <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {message}
+      <div className="bms-body">
+        <aside className="bms-left-tree">
+          <div className="mb-3 text-sm font-semibold tracking-wide text-muted-foreground">
+            ROOT TREE
           </div>
-        ) : null}
-
-        {tab === "main" ? (
-          <Card className="border-0 bg-transparent shadow-none">
-            <CardHeader className="px-0">
-              <CardTitle>譜面一覧</CardTitle>
-              <CardDescription>エクスプローラー風に検索結果を一覧表示します。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 px-0">
-              <div className="flex gap-2">
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.currentTarget.value)}
-                  placeholder="タイトル / アーティスト / パス"
-                />
-                <Button onClick={() => void searchCharts(query)} disabled={!!loading}>
-                  <Search className="mr-2 h-4 w-4" />
-                  検索
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <Input
+                value={rootPath}
+                onChange={(e) => setRootPath(e.currentTarget.value)}
+                placeholder="例: D:/BMS"
+              />
+              <Button variant="outline" onClick={() => void pickRootDirectory()}>
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </div>
+            <Button
+              onClick={() => void addRoot()}
+              disabled={!rootPath || !!loading}
+              className="w-full"
+            >
+              ルート追加
+            </Button>
+          </div>
+          <div className="mt-3 max-h-[62vh] space-y-2 overflow-auto pr-1">
+            {roots.map((r) => (
+              <div
+                key={r.id}
+                className={[
+                  "rounded-md border p-2",
+                  selectedRootId === r.id
+                    ? "border-primary/60 bg-primary/10"
+                    : "border-border/70 bg-background/70",
+                ].join(" ")}
+              >
+                <button
+                  type="button"
+                  className="block w-full text-left"
+                  onClick={() => setSelectedRootId(r.id)}
+                >
+                  <div className="truncate text-sm font-medium">{r.path}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">{fmt(r.created_at)}</div>
+                </button>
+                <Button
+                  size="sm"
+                  className="mt-2 w-full"
+                  onClick={() => void scanRoot(r.id)}
+                  disabled={!!loading}
+                >
+                  スキャン
                 </Button>
               </div>
-              <div className="overflow-hidden rounded-xl border border-border/80">
-                <div className="grid grid-cols-[90px_minmax(160px,1.4fr)_minmax(140px,1fr)_minmax(240px,2fr)_minmax(180px,1.5fr)] bg-muted/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <div>ID</div>
-                  <div>Title</div>
-                  <div>Artist</div>
-                  <div>Path</div>
-                  <div>MD5</div>
+            ))}
+          </div>
+          {scanLog ? (
+            <div className="mt-3 rounded-md bg-secondary/40 p-2 text-xs">
+              root#{scanLog.root_id} package {scanLog.package_count} chart {scanLog.chart_count}{" "}
+              parsed {scanLog.parsed_count}
+            </div>
+          ) : null}
+        </aside>
+
+        <section className="bms-workspace">
+          {message ? (
+            <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {message}
+            </div>
+          ) : null}
+
+          {tab === "main" ? (
+            <Card className="bms-panel border-0 bg-transparent shadow-none">
+              <CardHeader className="px-0 pb-3">
+                <CardTitle className="font-['Chakra_Petch'] text-xl tracking-wide">
+                  譜面一覧
+                </CardTitle>
+                <CardDescription>
+                  エクスプローラー形式で曲データを高速に参照します。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 px-0">
+                <div className="bms-hero">
+                  <div className="bms-hero-copy">
+                    <div className="font-['Chakra_Petch'] text-2xl font-semibold tracking-wider">
+                      BMS COLLECTION
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      ルート管理・難易度表・重複整理を横断して統合管理
+                    </div>
+                  </div>
+                  <img
+                    src="/tauri.svg"
+                    alt="hero"
+                    className="h-16 w-16 opacity-80 sm:h-20 sm:w-20"
+                  />
                 </div>
-                <div className="max-h-[68vh] overflow-auto">
-                  <div className="min-w-[720px] divide-y divide-border">
-                    {charts.map((c) => (
-                      <div
-                        key={c.chart_id}
-                        className="grid grid-cols-[90px_minmax(160px,1.4fr)_minmax(140px,1fr)_minmax(240px,2fr)_minmax(180px,1.5fr)] px-3 py-2 text-sm hover:bg-accent/25"
-                      >
-                        <div className="font-mono text-xs text-muted-foreground">#{c.chart_id}</div>
-                        <div className="truncate" title={c.title ?? c.rel_path}>
-                          {c.title || c.rel_path}
-                        </div>
-                        <div className="truncate text-muted-foreground">{c.artist || "-"}</div>
+                <div className="flex gap-2">
+                  <Input
+                    value={query}
+                    onChange={(e) => setQuery(e.currentTarget.value)}
+                    placeholder="タイトル / アーティスト / パス"
+                  />
+                  <Button onClick={() => void searchCharts(query)} disabled={!!loading}>
+                    <Search className="mr-2 h-4 w-4" />
+                    検索
+                  </Button>
+                </div>
+                <div className="overflow-hidden rounded-md border border-border/80 bg-card/80">
+                  <div className="bms-grid-header grid grid-cols-[90px_minmax(160px,1.4fr)_minmax(140px,1fr)_minmax(240px,2fr)_minmax(180px,1.5fr)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    <div>ID</div>
+                    <div>Title</div>
+                    <div>Artist</div>
+                    <div>Path</div>
+                    <div>MD5</div>
+                  </div>
+                  <div className="max-h-[68vh] overflow-auto">
+                    <div className="min-w-[720px] divide-y divide-border">
+                      {visibleCharts.map((c) => (
                         <div
-                          className="truncate text-muted-foreground"
-                          title={`${c.root_path}/${c.package_path}/${c.rel_path}`}
+                          key={c.chart_id}
+                          className="bms-grid-row grid grid-cols-[90px_minmax(160px,1.4fr)_minmax(140px,1fr)_minmax(240px,2fr)_minmax(180px,1.5fr)] px-3 py-2 text-sm"
                         >
-                          {c.root_path}/{c.package_path}/{c.rel_path}
+                          <div className="font-mono text-xs text-muted-foreground">
+                            #{c.chart_id}
+                          </div>
+                          <div className="truncate" title={c.title ?? c.rel_path}>
+                            {c.title || c.rel_path}
+                          </div>
+                          <div className="truncate text-muted-foreground">{c.artist || "-"}</div>
+                          <div
+                            className="truncate text-muted-foreground"
+                            title={`${c.root_path}/${c.package_path}/${c.rel_path}`}
+                          >
+                            {c.root_path}/{c.package_path}/{c.rel_path}
+                          </div>
+                          <div className="truncate font-mono text-xs text-muted-foreground">
+                            {c.file_md5 || "-"}
+                          </div>
                         </div>
-                        <div className="truncate font-mono text-xs text-muted-foreground">
-                          {c.file_md5 || "-"}
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {tab === "dedupe" ? (
+            <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-[1.35fr_0.9fr]">
+              <Card className="bms-panel">
+                <CardHeader>
+                  <CardTitle>重複候補一覧</CardTitle>
+                  <CardDescription>同一 file_md5 の候補を一覧表示します。</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button
+                    variant="secondary"
+                    onClick={() => void loadDuplicates()}
+                    disabled={!!loading}
+                  >
+                    候補を再検出
+                  </Button>
+                  <div className="mt-3 max-h-[62vh] space-y-2 overflow-auto pr-1">
+                    {duplicates.map((g) => (
+                      <div
+                        key={g.key}
+                        className="rounded-md border border-border/70 bg-background/60 p-3"
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <code className="min-w-0 break-all text-xs">{g.key}</code>
+                          <Badge variant="secondary">{g.charts.length}件</Badge>
+                        </div>
+                        <div className="space-y-1">
+                          {g.charts.map((c) => (
+                            <div
+                              key={c.chart_id}
+                              className="grid grid-cols-[72px_minmax(0,1fr)] gap-2 text-xs text-muted-foreground"
+                              title={c.full_path}
+                            >
+                              <span className="font-mono">#{c.chart_id}</span>
+                              <span className="break-all">{c.full_path}</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     ))}
                   </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+                </CardContent>
+              </Card>
 
-        {tab === "dedupe" ? (
-          <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-[1.35fr_0.9fr]">
-            <Card>
-              <CardHeader>
-                <CardTitle>重複候補一覧</CardTitle>
-                <CardDescription>同一 file_md5 の候補を一覧表示します。</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button
-                  variant="secondary"
-                  onClick={() => void loadDuplicates()}
-                  disabled={!!loading}
-                >
-                  候補を再検出
-                </Button>
-                <div className="mt-3 max-h-[62vh] space-y-2 overflow-auto pr-1">
-                  {duplicates.map((g) => (
-                    <div
-                      key={g.key}
-                      className="rounded-lg border border-border/70 bg-background/60 p-3"
-                    >
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <code className="min-w-0 break-all text-xs">{g.key}</code>
-                        <Badge variant="secondary">{g.charts.length}件</Badge>
-                      </div>
-                      <div className="space-y-1">
-                        {g.charts.map((c) => (
-                          <div
-                            key={c.chart_id}
-                            className="grid grid-cols-[72px_minmax(0,1fr)] gap-2 text-xs text-muted-foreground"
-                            title={c.full_path}
-                          >
-                            <span className="font-mono">#{c.chart_id}</span>
-                            <span className="break-all">{c.full_path}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>重複解消</CardTitle>
-                <CardDescription>プレビュー後に実行します（root跨ぎは不可）。</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Input
-                  value={keepChartId}
-                  onChange={(e) => setKeepChartId(e.currentTarget.value)}
-                  placeholder="保持する chart_id"
-                />
-                <Textarea
-                  value={removeChartIds}
-                  onChange={(e) => setRemoveChartIds(e.currentTarget.value)}
-                  placeholder="削除する chart_id（カンマ/改行区切り）"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => void previewDedupe()}
-                    disabled={!keepChartId || removeIds.length === 0 || !!loading}
-                  >
-                    プレビュー
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => void executeDedupe()}
-                    disabled={!preview || preview.cross_root || !!loading}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    実行
-                  </Button>
-                </div>
-                {preview ? (
-                  <div className="rounded-md border border-border bg-background/60 p-3 text-xs">
-                    <div>削除対象: {preview.remove_count}件</div>
-                    <div>
-                      確認フレーズ: <code>{preview.confirmation_phrase}</code>
-                    </div>
-                    <div>root跨ぎ: {preview.cross_root ? "あり（実行不可）" : "なし"}</div>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </div>
-        ) : null}
-
-        {tab === "settings" ? (
-          <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>ルート設定</CardTitle>
-                <CardDescription>フォルダ選択または直接入力でルートを追加します。</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex gap-2">
+              <Card className="bms-panel">
+                <CardHeader>
+                  <CardTitle>重複解消</CardTitle>
+                  <CardDescription>プレビュー後に実行します（root跨ぎは不可）。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
                   <Input
-                    value={rootPath}
-                    onChange={(e) => setRootPath(e.currentTarget.value)}
-                    placeholder="例: D:/BMS"
+                    value={keepChartId}
+                    onChange={(e) => setKeepChartId(e.currentTarget.value)}
+                    placeholder="保持する chart_id"
                   />
-                  <Button variant="outline" onClick={() => void pickRootDirectory()}>
-                    <FolderOpen className="mr-2 h-4 w-4" />
-                    選択
-                  </Button>
-                </div>
-                <Button onClick={() => void addRoot()} disabled={!rootPath || !!loading}>
-                  ルート追加
-                </Button>
-                <div className="max-h-[48vh] space-y-2 overflow-auto pr-1">
-                  {roots.map((r) => (
-                    <div
-                      key={r.id}
-                      className="rounded-lg border border-border/70 bg-background/60 p-3"
+                  <Textarea
+                    value={removeChartIds}
+                    onChange={(e) => setRemoveChartIds(e.currentTarget.value)}
+                    placeholder="削除する chart_id（カンマ/改行区切り）"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => void previewDedupe()}
+                      disabled={!keepChartId || removeIds.length === 0 || !!loading}
                     >
-                      <div className="truncate text-sm font-medium">{r.path}</div>
-                      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                        <span>登録: {fmt(r.created_at)}</span>
-                        <Button size="sm" onClick={() => void scanRoot(r.id)} disabled={!!loading}>
-                          スキャン
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {scanLog ? (
-                  <div className="rounded-md bg-secondary/40 p-2 text-xs">
-                    root#{scanLog.root_id} package {scanLog.package_count} chart{" "}
-                    {scanLog.chart_count} parsed {scanLog.parsed_count}
+                      プレビュー
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => void executeDedupe()}
+                      disabled={!preview || preview.cross_root || !!loading}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      実行
+                    </Button>
                   </div>
-                ) : null}
-              </CardContent>
-            </Card>
+                  {preview ? (
+                    <div className="rounded-md border border-border bg-background/60 p-3 text-xs">
+                      <div>削除対象: {preview.remove_count}件</div>
+                      <div>
+                        確認フレーズ: <code>{preview.confirmation_phrase}</code>
+                      </div>
+                      <div>root跨ぎ: {preview.cross_root ? "あり（実行不可）" : "なし"}</div>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
 
-            <Card>
-              <CardHeader>
-                <CardTitle>難易度表取り込み設定</CardTitle>
-                <CardDescription>URLを複数行で登録し、一括取り込みできます。</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Textarea
-                  value={tableUrlBulk}
-                  onChange={(e) => setTableUrlBulk(e.currentTarget.value)}
-                  placeholder={"https://example.com/table-a.html\nhttps://example.com/table-b.html"}
-                />
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => void addTableSourcesBulk()}
-                    disabled={!tableUrlBulk.trim() || !!loading}
-                  >
-                    複数登録
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => void importAllSources()}
-                    disabled={sources.length === 0 || !!loading}
-                  >
-                    全件取り込み
-                  </Button>
-                </div>
-                <div className="max-h-[42vh] space-y-2 overflow-auto pr-1">
-                  {sources.map((src) => (
-                    <div
-                      key={src.id}
-                      className="rounded-lg border border-border/70 bg-background/60 p-3"
+          {tab === "settings" ? (
+            <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
+              <Card className="bms-panel">
+                <CardHeader>
+                  <CardTitle>難易度表取り込み設定</CardTitle>
+                  <CardDescription>URLを複数行で登録し、一括取り込みできます。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Textarea
+                    value={tableUrlBulk}
+                    onChange={(e) => setTableUrlBulk(e.currentTarget.value)}
+                    placeholder={
+                      "https://example.com/table-a.html\nhttps://example.com/table-b.html"
+                    }
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => void addTableSourcesBulk()}
+                      disabled={!tableUrlBulk.trim() || !!loading}
                     >
-                      <div className="truncate text-sm font-medium">{src.input_url}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        成功: {fmt(src.last_success_at)} / 取得: {fmt(src.last_fetch_at)}
+                      複数登録
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => void importAllSources()}
+                      disabled={sources.length === 0 || !!loading}
+                    >
+                      全件取り込み
+                    </Button>
+                  </div>
+                  <div className="max-h-[42vh] space-y-2 overflow-auto pr-1">
+                    {sources.map((src) => (
+                      <div
+                        key={src.id}
+                        className="rounded-md border border-border/70 bg-background/60 p-3"
+                      >
+                        <div className="truncate text-sm font-medium">{src.input_url}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          成功: {fmt(src.last_success_at)} / 取得: {fmt(src.last_fetch_at)}
+                        </div>
+                        {src.last_error ? (
+                          <div className="mt-1 text-xs text-destructive">{src.last_error}</div>
+                        ) : null}
+                        <div className="mt-2">
+                          <Button
+                            size="sm"
+                            onClick={() => void importSource(src.id)}
+                            disabled={!!loading}
+                          >
+                            取り込み
+                          </Button>
+                        </div>
                       </div>
-                      {src.last_error ? (
-                        <div className="mt-1 text-xs text-destructive">{src.last_error}</div>
-                      ) : null}
-                      <div className="mt-2">
-                        <Button
-                          size="sm"
-                          onClick={() => void importSource(src.id)}
-                          disabled={!!loading}
-                        >
-                          取り込み
-                        </Button>
-                      </div>
+                    ))}
+                  </div>
+                  {lastImport ? (
+                    <div className="rounded-md bg-accent/40 p-2 text-xs">
+                      table#{lastImport.table_id} pattern {lastImport.pattern} entries{" "}
+                      {lastImport.entry_count}
                     </div>
-                  ))}
-                </div>
-                {lastImport ? (
-                  <div className="rounded-md bg-accent/40 p-2 text-xs">
-                    table#{lastImport.table_id} pattern {lastImport.pattern} entries{" "}
-                    {lastImport.entry_count}
-                  </div>
-                ) : null}
-                {ownership ? (
-                  <div className="rounded-md bg-secondary/40 p-2 text-xs">
-                    所持 {ownership.owned_entries} / 未所持 {ownership.missing_entries} / 合計{" "}
-                    {ownership.total_entries}
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </div>
-        ) : null}
-      </section>
+                  ) : null}
+                  {ownership ? (
+                    <div className="rounded-md bg-secondary/40 p-2 text-xs">
+                      所持 {ownership.owned_entries} / 未所持 {ownership.missing_entries} / 合計{" "}
+                      {ownership.total_entries}
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+        </section>
+      </div>
       <StatusBar loading={loading} scanStatus={scanStatus} />
     </main>
   );
@@ -564,10 +624,8 @@ function NavButton({
       type="button"
       onClick={onClick}
       className={[
-        "w-full rounded-lg px-3 py-2 text-left text-sm transition",
-        active
-          ? "bg-primary text-primary-foreground"
-          : "bg-background/60 text-foreground hover:bg-accent",
+        "bms-nav-button px-3 py-2 text-left text-sm transition",
+        active ? "active" : "",
       ].join(" ")}
     >
       {children}
@@ -592,9 +650,9 @@ function StatusBar({ loading, scanStatus }: { loading: string | null; scanStatus
                 ? "重複削除実行中"
                 : "処理中";
   return (
-    <div className="fixed bottom-3 left-1/2 z-30 -translate-x-1/2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/40">
+    <div className="fixed bottom-3 left-1/2 z-30 -translate-x-1/2 rounded-md border border-border bg-card text-card-foreground shadow-xl shadow-black/20">
       <div className="flex items-center gap-3 px-4 py-2 text-sm font-medium">
-        <div className="h-2 w-2 animate-pulse rounded-full bg-primary-foreground" />
+        <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
         <div className="flex flex-col">
           <span>
             {label}

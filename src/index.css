@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=M+PLUS+1p:wght@400;500;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,24 +6,24 @@
 
 @layer base {
   :root {
-    --background: 40 38% 96%;
-    --foreground: 200 22% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 200 22% 12%;
-    --primary: 196 78% 32%;
+    --background: 215 20% 92%;
+    --foreground: 222 30% 16%;
+    --card: 220 22% 97%;
+    --card-foreground: 222 30% 16%;
+    --primary: 206 84% 36%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 33 70% 86%;
-    --secondary-foreground: 196 45% 20%;
-    --muted: 40 28% 90%;
-    --muted-foreground: 200 14% 40%;
-    --accent: 165 62% 82%;
-    --accent-foreground: 191 56% 18%;
-    --destructive: 0 78% 56%;
+    --secondary: 213 37% 86%;
+    --secondary-foreground: 217 54% 20%;
+    --muted: 214 22% 88%;
+    --muted-foreground: 220 13% 38%;
+    --accent: 193 46% 82%;
+    --accent-foreground: 220 44% 19%;
+    --destructive: 0 72% 52%;
     --destructive-foreground: 0 0% 100%;
-    --border: 34 30% 80%;
-    --input: 34 30% 80%;
-    --ring: 196 78% 32%;
-    --radius: 0.75rem;
+    --border: 214 25% 74%;
+    --input: 214 25% 74%;
+    --ring: 206 84% 36%;
+    --radius: 0.4rem;
   }
 
   * {
@@ -31,14 +31,86 @@
   }
 
   body {
-    @apply min-h-screen bg-background font-sans text-foreground antialiased;
+    @apply min-h-screen bg-background text-foreground antialiased;
+    font-family: "M PLUS 1p", sans-serif;
     background-image:
-      radial-gradient(circle at 8% 10%, hsl(165 62% 82% / 0.25), transparent 32%),
-      radial-gradient(circle at 86% 20%, hsl(196 78% 42% / 0.18), transparent 36%),
-      linear-gradient(160deg, hsl(40 38% 96%), hsl(38 32% 92%));
+      radial-gradient(circle at 15% 5%, hsl(210 80% 70% / 0.18), transparent 28%),
+      linear-gradient(180deg, hsl(214 20% 95%), hsl(214 24% 89%));
   }
 
   #root {
     @apply min-h-screen;
+  }
+
+  .bms-shell {
+    @apply mx-auto min-h-screen w-full max-w-[1600px] px-2 py-3 sm:px-3;
+  }
+
+  .bms-topbar {
+    @apply mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-card/95 px-3 py-2 shadow-sm;
+  }
+
+  .bms-topnav {
+    @apply flex items-center gap-2;
+  }
+
+  .bms-body {
+    @apply flex min-h-[calc(100vh-7rem)] flex-col gap-3 lg:flex-row;
+  }
+
+  .bms-left-tree {
+    @apply w-full shrink-0 rounded-md border border-border bg-card/95 p-3 shadow-sm lg:w-[320px];
+  }
+
+  .bms-workspace {
+    @apply min-w-0 flex-1 rounded-md border border-border bg-card/90 p-3 shadow-sm;
+    animation: bms-enter 280ms ease-out;
+  }
+
+  .bms-panel {
+    @apply rounded-md border border-border/80 bg-card/80;
+  }
+
+  .bms-nav-button {
+    @apply rounded-md border border-transparent bg-background/70 text-foreground;
+  }
+
+  .bms-nav-button:hover {
+    @apply border-border/60 bg-muted/50;
+  }
+
+  .bms-nav-button.active {
+    @apply border-primary/40 bg-primary text-primary-foreground shadow-sm;
+  }
+
+  .bms-grid-header {
+    background: linear-gradient(180deg, hsl(213 30% 90%), hsl(213 24% 85%));
+  }
+
+  .bms-grid-row {
+    background: linear-gradient(180deg, hsl(220 24% 97%), hsl(220 20% 95%));
+  }
+
+  .bms-grid-row:hover {
+    background: linear-gradient(180deg, hsl(198 50% 92%), hsl(198 45% 88%));
+  }
+
+  .bms-hero {
+    @apply flex items-center justify-between rounded-md border border-border bg-gradient-to-r from-secondary/55 to-accent/55 px-4 py-3;
+  }
+
+  .bms-hero-copy {
+    @apply min-w-0;
+  }
+
+  @keyframes bms-enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
